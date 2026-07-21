@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="mylab — a small HTML, CSS, and JavaScript playground" />
+  <title>MyLab - ملعب</title>
+</head>
+
+<body>
+  <main class="app-shell" id="app-shell">
+    <section class="preview-pane" id="preview-pane" aria-label="Live preview">
+      <iframe id="preview" title="Live preview" sandbox="allow-scripts allow-forms allow-modals allow-popups"></iframe>
+    </section>
+
+    <div class="splitter" id="splitter" role="separator" aria-label="Resize preview and editor" tabindex="0"></div>
+
+    <section class="workspace" aria-label="mylab editor">
+      <header class="topbar">
+        <div class="brand">
+          <img class="brand-logo" src="/logo.svg" alt="ملعب" />
+        </div>
+        <div class="toolbar" aria-label="mylab actions">
+          <label class="theme-picker" for="editor-theme-select">
+            <span class="sr-only">Code editor theme</span>
+            <select id="editor-theme-select" aria-label="Code editor theme"></select>
+          </label>
+          <span class="preview-state" id="preview-state" hidden><span></span>Ready</span>
+          <button class="icon-button" id="share-button" type="button" title="Copy share link"
+            aria-label="Copy share link">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="18" cy="5" r="2.5"></circle>
+              <circle cx="6" cy="12" r="2.5"></circle>
+              <circle cx="18" cy="19" r="2.5"></circle>
+              <path d="m8.3 10.8 7.4-4.5M8.3 13.2l7.4 4.5"></path>
+            </svg>
+          </button>
+          <button class="icon-button" id="reset-button" type="button" title="Reset mylab" aria-label="Reset mylab">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 5v5h5"></path>
+              <path d="M5.2 14a7 7 0 1 0 1.4-6.9L4 10"></path>
+            </svg>
+          </button>
+          <button class="icon-button" id="fullscreen-button" type="button" title="Fullscreen preview"
+            aria-label="Fullscreen preview">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M21 16v5h-5"></path>
+            </svg>
+          </button>
+          <button class="icon-button" id="theme-button" type="button" title="Toggle theme" aria-label="Toggle theme">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path class="sun"
+                d="M12 4V2m0 20v-2M4 12H2m20 0h-2m-1.7-5.7-1.4 1.4M7.1 16.9l-1.4 1.4m0-12.7 1.4 1.4m9.8 9.9 1.4 1.4">
+              </path>
+              <circle cx="12" cy="12" r="3.5"></circle>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="editor-stack" id="editor-stack">
+        <section class="editor-section is-open" data-editor="html">
+          <button class="section-header" type="button" aria-expanded="true" aria-controls="editor-html">
+            <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m4 6 4 4 4-4"></path>
+            </svg>
+            <span>HTML</span>
+          </button>
+          <div class="editor-container" id="editor-html"></div>
+        </section>
+        <section class="editor-section" data-editor="css">
+          <button class="section-header" type="button" aria-expanded="false" aria-controls="editor-css">
+            <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m4 6 4 4 4-4"></path>
+            </svg>
+            <span>CSS</span>
+          </button>
+          <div class="editor-container" id="editor-css"></div>
+        </section>
+        <section class="editor-section" data-editor="js">
+          <button class="section-header" type="button" aria-expanded="false" aria-controls="editor-js">
+            <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m4 6 4 4 4-4"></path>
+            </svg>
+            <span>JavaScript</span>
+          </button>
+          <div class="editor-container" id="editor-js"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>
