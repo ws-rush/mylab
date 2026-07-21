@@ -4,7 +4,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="mylab — a small HTML, CSS, and JavaScript playground" />
+  <meta name="description" content="مساحة صغيرة للأفكار الكبيرة وملعب للمطورين والمستذكيات" />
+  <meta property="og:description" content="مساحة صغيرة للأفكار الكبيرة وملعب للمطورين والمستذكيات" />
+  <meta property="og:image" content="/image.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="644" />
+  <meta property="og:image:height" content="365" />
+  <meta property="og:image:alt" content="ملعب — مساحة صغيرة للأفكار الكبيرة" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:description" content="مساحة صغيرة للأفكار الكبيرة وملعب للمطورين والمستذكيات" />
+  <meta name="twitter:image" content="/image.png" />
+  <meta name="twitter:image:alt" content="ملعب — مساحة صغيرة للأفكار الكبيرة" />
   <title>MyLab - ملعب</title>
   <link rel="icon" type="image/svg+xml" href="/logo-light.svg" media="(prefers-color-scheme: light)" />
   <link rel="icon" type="image/svg+xml" href="/logo.svg" media="(prefers-color-scheme: dark)" />
@@ -16,19 +26,18 @@
       <iframe id="preview" title="Live preview" sandbox="allow-scripts allow-forms allow-modals allow-popups"></iframe>
     </section>
 
-    <div class="splitter" id="splitter" role="separator" aria-label="Resize preview and editor" tabindex="0"></div>
+    <div class="splitter" id="splitter" role="separator" aria-label="Resize preview and editor" aria-valuemin="260" aria-valuemax="1000" aria-valuenow="50" tabindex="0"></div>
 
     <section class="workspace" aria-label="mylab editor">
       <header class="topbar">
         <div class="brand">
-          <img class="brand-logo" src="/logo.svg" alt="ملعب" />
+          <img class="brand-logo" src="/logo.svg" alt="ملعب" width="72" height="24" />
         </div>
         <div class="toolbar" aria-label="mylab actions">
           <label class="theme-picker" for="editor-theme-select">
             <span class="sr-only">Code editor theme</span>
             <select id="editor-theme-select" aria-label="Code editor theme"></select>
           </label>
-          <span class="preview-state" id="preview-state" hidden><span></span>Ready</span>
           <button class="icon-button" id="share-button" type="button" title="Copy share link"
             aria-label="Copy share link">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -69,9 +78,14 @@
             </svg>
             <span>HTML</span>
           </button>
-          <div class="editor-container" id="editor-html"></div>
+          <div class="editor-container" id="editor-html">
+            <pre class="editor-placeholder" aria-label="HTML code editor">&lt;main class="hero" dir="rtl"&gt;
+  &lt;img class="logo" src="/logo.svg" alt="ملعب" /&gt;
+  &lt;p class="tagline"&gt;مساحة صغيرة للأفكار الكبيرة&lt;/p&gt;
+&lt;/main&gt;</pre>
+          </div>
         </section>
-        <div class="editor-splitter" role="separator" aria-label="Resize HTML and CSS panes" aria-orientation="horizontal" tabindex="0"></div>
+        <div class="editor-splitter" role="separator" aria-label="Resize HTML and CSS panes" aria-orientation="horizontal" aria-valuemin="30" aria-valuemax="1000" aria-valuenow="50" tabindex="0"></div>
         <section class="editor-section" data-editor="css">
           <button class="section-header" type="button" aria-expanded="false" aria-controls="editor-css">
             <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true">
@@ -81,7 +95,7 @@
           </button>
           <div class="editor-container" id="editor-css"></div>
         </section>
-        <div class="editor-splitter" role="separator" aria-label="Resize CSS and JavaScript panes" aria-orientation="horizontal" tabindex="0"></div>
+        <div class="editor-splitter" role="separator" aria-label="Resize CSS and JavaScript panes" aria-orientation="horizontal" aria-valuemin="30" aria-valuemax="1000" aria-valuenow="50" tabindex="0"></div>
         <section class="editor-section" data-editor="js">
           <button class="section-header" type="button" aria-expanded="false" aria-controls="editor-js">
             <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true">
