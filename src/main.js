@@ -151,6 +151,13 @@ const preview = document.querySelector('#preview');
 const previewState = document.querySelector('#preview-state');
 const toast = document.querySelector('#toast');
 const splitter = document.querySelector('#splitter');
+const editorStack = document.querySelector('#editor-stack');
+const editorSections = [...document.querySelectorAll('.editor-section')];
+const editorSplitters = [...document.querySelectorAll('.editor-splitter')];
+
+const EDITOR_HEADER_HEIGHT = 30;
+const EDITOR_MIN_OPEN_HEIGHT = 120;
+const EDITOR_OPEN_THRESHOLD = EDITOR_HEADER_HEIGHT + 8;
 
 const initialCode = readCodeFromHash();
 
@@ -610,15 +617,126 @@ function toggleFullscreen() {
   previewPane.requestFullscreen?.().catch(() => showToast('Fullscreen is unavailable'));
 }
 
-function toggleSection(section) {
-  const open = section.classList.toggle('is-open');
-  const header = section.querySelector('.section-header');
-  header.setAttribute('aria-expanded', String(open));
+function setEditorPaneSize(section, size) {
+  section.style.flex = `0 0 ${Math.max(EDITOR_HEADER_HEIGHT, size)}px`;
+}
 
-  if (open) {
-    const key = section.dataset.editor;
-    window.requestAnimationFrame(() => editors.get(key)?.requestMeasure());
+function layoutEditorPanes() {
+  if (!editorStack) return;
+
+  const openSections = editorSections.filter((section) => section.classList.contains('is-open'));
+  if (!openSections.length) return;
+
+  const closedSpace = (editorSections.length - openSections.length) * EDITOR_HEADER_HEIGHT;
+  const splitterSpace = editorSplitters.reduce((total, sectionSplitter) => total + sectionSplitter.offsetHeight, 0);
+  const openSpace = Math.max(0, editorStack.clientHeight - closedSpace - splitterSpace);
+  const openHeight = openSpace / openSections.length;
+
+  for (const section of editorSections) {
+    setEditorPaneSize(section, section.classList.contains('is-open') ? openHeight : EDITOR_HEADER_HEIGHT);
   }
+}
+
+function requestEditorMeasures() {
+  window.requestAnimationFrame(() => {
+    for (const section of editorSections) {
+      if (!section.classList.contains('is-open')) continue;
+      editors.get(section.dataset.editor)?.requestMeasure();
+    }
+  });
+}
+
+function syncSectionAccessibility() {
+  for (const section of editorSections) {
+    section.querySelector('.section-header')?.setAttribute(
+      'aria-expanded',
+      String(section.classList.contains('is-open')),
+    );
+  }
+}
+
+function toggleSection(section) {
+  const isOpen = section.classList.contains('is-open');
+  const openSections = editorSections.filter((candidate) => candidate.classList.contains('is-open'));
+
+  if (isOpen && openSections.length === 1) {
+    const currentIndex = editorSections.indexOf(section);
+    const nextSection = editorSections[(currentIndex + 1) % editorSections.length];
+    section.classList.remove('is-open');
+    nextSection.classList.add('is-open');
+  } else {
+    section.classList.toggle('is-open', !isOpen);
+  }
+
+  syncSectionAccessibility();
+  layoutEditorPanes();
+  requestEditorMeasures();
+}
+
+function updateEditorSplit(splitterElement, clientY) {
+  const previousSection = splitterElement.previousElementSibling;
+  const nextSection = splitterElement.nextElementSibling;
+  if (!previousSection?.matches('.editor-section') || !nextSection?.matches('.editor-section')) return;
+
+  const previousRect = previousSection.getBoundingClientRect();
+  const nextRect = nextSection.getBoundingClientRect();
+  const totalHeight = previousRect.height + nextRect.height;
+  const previousWasOpen = previousSection.classList.contains('is-open');
+  const nextWasOpen = nextSection.classList.contains('is-open');
+  const previousMinimum = previousWasOpen ? EDITOR_MIN_OPEN_HEIGHT : EDITOR_HEADER_HEIGHT;
+  const nextMinimum = nextWasOpen ? EDITOR_MIN_OPEN_HEIGHT : EDITOR_HEADER_HEIGHT;
+  const previousHeight = Math.min(
+    Math.max(clientY - previousRect.top, previousMinimum),
+    totalHeight - nextMinimum,
+  );
+  const nextHeight = totalHeight - previousHeight;
+
+  if (!previousWasOpen && previousHeight > EDITOR_OPEN_THRESHOLD) previousSection.classList.add('is-open');
+  if (!nextWasOpen && nextHeight > EDITOR_OPEN_THRESHOLD) nextSection.classList.add('is-open');
+
+  setEditorPaneSize(previousSection, previousHeight);
+  setEditorPaneSize(nextSection, nextHeight);
+  syncSectionAccessibility();
+  splitterElement.setAttribute('aria-valuenow', String(Math.round(previousHeight)));
+  requestEditorMeasures();
+}
+
+function setupEditorSplitters() {
+  let draggingSplitter = null;
+
+  for (const splitterElement of editorSplitters) {
+    splitterElement.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      draggingSplitter = splitterElement;
+      splitterElement.setPointerCapture(event.pointerId);
+      editorStack.classList.add('is-editor-resizing');
+      document.body.style.cursor = 'row-resize';
+    });
+
+    splitterElement.addEventListener('pointermove', (event) => {
+      if (draggingSplitter === splitterElement) updateEditorSplit(splitterElement, event.clientY);
+    });
+
+    const stopDragging = () => {
+      if (draggingSplitter !== splitterElement) return;
+      draggingSplitter = null;
+      editorStack.classList.remove('is-editor-resizing');
+      document.body.style.cursor = '';
+    };
+
+    splitterElement.addEventListener('pointerup', stopDragging);
+    splitterElement.addEventListener('pointercancel', stopDragging);
+    splitterElement.addEventListener('keydown', (event) => {
+      const direction = event.key === 'ArrowDown' ? 24 : event.key === 'ArrowUp' ? -24 : 0;
+      if (!direction) return;
+      event.preventDefault();
+      const currentPosition = splitterElement.getBoundingClientRect().top;
+      updateEditorSplit(splitterElement, currentPosition + direction);
+    });
+  }
+
+  window.addEventListener('resize', () => window.requestAnimationFrame(layoutEditorPanes));
 }
 
 function updateSplit(clientX, clientY) {
@@ -704,4 +822,6 @@ applyTheme();
 setupSections();
 setupActions();
 setupSplitter();
+setupEditorSplitters();
+layoutEditorPanes();
 updatePreview();
