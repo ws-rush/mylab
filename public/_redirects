@@ -1,0 +1,2 @@
+# Cloudflare Pages SPA rewrite for /play route
+/play/*  /play/index.html  200
