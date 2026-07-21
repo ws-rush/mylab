@@ -1,4 +1,4 @@
-# MyLab - ملعب
+# mylab - ملعب
 
 A small browser-based playground for experimenting with HTML, CSS, and JavaScript with a live preview.
 
