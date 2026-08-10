@@ -130,38 +130,82 @@ const editorSurfacePalettes = {
   },
 };
 
+/**
+ * Shared layout metrics applied through CodeMirror's own theme system so they
+ * win over the base theme's higher-specificity scoped selectors. The
+ * .editor-placeholder in index.html mirrors these exact values (font, padding,
+ * line-height, gutter widths) to eliminate layout shift before the editor mounts.
+ */
+const editorLayoutTheme = EditorView.theme({
+  '&': {
+    fontFamily: "'Fira Code', 'Fira Code Fallback', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    fontSize: '13px',
+    lineHeight: '1.62',
+  },
+  '.cm-scroller': {
+    fontFamily: 'inherit',
+    lineHeight: 'inherit',
+  },
+  '.cm-content': {
+    padding: '12px 14px',
+  },
+  '.cm-lineNumbers .cm-gutterElement': {
+    minWidth: '42px',
+    padding: '0 10px 0 0',
+  },
+  '.cm-foldGutter': {
+    width: '12px',
+  },
+});
+
+const builtinEditorThemes = {
+  'dark:default': () => [darkEditorTheme, syntaxHighlighting(darkHighlightStyle)],
+  'dark:contrast': () => [contrastDarkEditorTheme, syntaxHighlighting(contrastDarkHighlightStyle)],
+  'light:default': () => [lightEditorTheme, syntaxHighlighting(lightHighlightStyle)],
+  'light:contrast': () => [contrastLightEditorTheme, syntaxHighlighting(contrastLightHighlightStyle)],
+};
+
 function editorTheme() {
   const namedTheme = loadedNamedThemes.get(`${themeState.mode}:${themeState.name}`);
-  if (namedTheme) return namedTheme;
+  if (namedTheme) return [editorLayoutTheme, namedTheme];
 
-  if (themeState.mode === 'dark') {
-    return themeState.name === 'contrast'
-      ? [contrastDarkEditorTheme, syntaxHighlighting(contrastDarkHighlightStyle)]
-      : [darkEditorTheme, syntaxHighlighting(darkHighlightStyle)];
-  }
+  const key = `${themeState.mode}:${themeState.name}`;
+  const builder = builtinEditorThemes[key] || builtinEditorThemes[`${themeState.mode}:default`];
+  return [editorLayoutTheme, ...builder()];
+}
 
-  return themeState.name === 'contrast'
-    ? [contrastLightEditorTheme, syntaxHighlighting(contrastLightHighlightStyle)]
-    : [lightEditorTheme, syntaxHighlighting(lightHighlightStyle)];
+const PALETTE_VARS = {
+  '--code-background': 'background',
+  '--code-gutter': 'gutter',
+  '--code-foreground': 'foreground',
+  '--code-gutter-foreground': 'gutterForeground',
+  '--code-caret': 'caret',
+  '--code-selection': 'selection',
+};
+
+const ACTIVE_LINE_DEFAULTS = {
+  dark: 'rgba(77, 77, 77, 0.16)',
+  light: 'rgba(201, 201, 201, 0.063)',
+};
+
+const ACTIVE_BORDER_DEFAULTS = {
+  dark: 'rgba(58, 58, 58, 0.5)',
+  light: 'rgba(176, 176, 176, 0.19)',
+};
+
+function getSurfacePalette() {
+  return editorSurfacePalettes[themeState.mode][themeState.name] || editorSurfacePalettes[themeState.mode].default;
 }
 
 function applySurfacePalette() {
-  const palette = editorSurfacePalettes[themeState.mode][themeState.name] || editorSurfacePalettes[themeState.mode].default;
-  document.documentElement.dataset.codeTheme = themeState.name;
-  document.documentElement.style.setProperty('--code-background', palette.background);
-  document.documentElement.style.setProperty('--code-gutter', palette.gutter);
-  document.documentElement.style.setProperty('--code-foreground', palette.foreground);
-  document.documentElement.style.setProperty('--code-gutter-foreground', palette.gutterForeground);
-  document.documentElement.style.setProperty('--code-caret', palette.caret);
-  document.documentElement.style.setProperty('--code-selection', palette.selection);
-  document.documentElement.style.setProperty(
-    '--code-active-line',
-    palette.activeLine || (themeState.mode === 'dark' ? 'rgba(77, 77, 77, 0.16)' : 'rgba(201, 201, 201, 0.063)'),
-  );
-  document.documentElement.style.setProperty(
-    '--code-active-border',
-    themeState.mode === 'dark' ? 'rgba(58, 58, 58, 0.5)' : 'rgba(176, 176, 176, 0.19)',
-  );
+  const palette = getSurfacePalette();
+  const root = document.documentElement;
+  root.dataset.codeTheme = themeState.name;
+  for (const [varName, paletteKey] of Object.entries(PALETTE_VARS)) {
+    root.style.setProperty(varName, palette[paletteKey]);
+  }
+  root.style.setProperty('--code-active-line', palette.activeLine || ACTIVE_LINE_DEFAULTS[themeState.mode]);
+  root.style.setProperty('--code-active-border', ACTIVE_BORDER_DEFAULTS[themeState.mode]);
 }
 
 export function applyEditorTheme(mode, name) {
@@ -173,24 +217,28 @@ export function applyEditorTheme(mode, name) {
   }
 }
 
+function createThemeLoadPromise(mode, name) {
+  const themeKey = `${mode}:${name}`;
+  const promise = import('./editor-themes.js').then(({ createNamedEditorTheme }) => {
+    const extension = createNamedEditorTheme(mode, name);
+    if (!extension) return null;
+    loadedNamedThemes.set(themeKey, extension);
+    editorSurfacePalettes[mode][name] = extension.palette;
+    return extension;
+  });
+  namedThemePromises.set(themeKey, promise);
+  return promise;
+}
+
+function applyThemeIfCurrent(mode, name) {
+  if (themeState.mode === mode && themeState.name === name) applyEditorTheme(mode, name);
+}
+
 export async function loadNamedEditorTheme(mode, name) {
   const themeKey = `${mode}:${name}`;
   if (loadedNamedThemes.has(themeKey)) return loadedNamedThemes.get(themeKey);
-
-  let promise = namedThemePromises.get(themeKey);
-  if (!promise) {
-    promise = import('./editor-themes.js').then(({ createNamedEditorTheme }) => {
-      const extension = createNamedEditorTheme(mode, name);
-      if (!extension) return null;
-      loadedNamedThemes.set(themeKey, extension);
-      editorSurfacePalettes[mode][name] = extension.palette;
-      return extension;
-    });
-    namedThemePromises.set(themeKey, promise);
-  }
-
-  const extension = await promise;
-  if (themeState.mode === mode && themeState.name === name) applyEditorTheme(mode, name);
+  const extension = await (namedThemePromises.get(themeKey) ?? createThemeLoadPromise(mode, name));
+  applyThemeIfCurrent(mode, name);
   return extension;
 }
 
@@ -241,6 +289,7 @@ export function createEditor({ key, parent, doc, onChange }) {
   return view;
 }
 
+// fallow-ignore-next-line unused-export
 export function setEditorValue(key, value) {
   const view = editors.get(key);
   if (!view) return;
@@ -249,14 +298,12 @@ export function setEditorValue(key, value) {
   view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
 }
 
+// fallow-ignore-next-line unused-export
 export function getEditor(key) {
   return editors.get(key);
 }
 
-export function hasEditors() {
-  return editors.size > 0;
-}
-
+// fallow-ignore-next-line unused-export
 export function requestEditorMeasure(key) {
   editors.get(key)?.requestMeasure();
 }

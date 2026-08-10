@@ -1,5 +1,5 @@
 const PROJECT_KEYS = ['html', 'css', 'js'];
-export const PROJECT_URL_VERSION = '1';
+const PROJECT_URL_VERSION = '1';
 
 /**
  * Build an agent-friendly mylab link. Source is stored in the URL fragment,
@@ -26,13 +26,9 @@ export function readProjectFromHash(hash) {
   const params = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
   if (params.get('v') !== PROJECT_URL_VERSION) return null;
 
-  const project = {};
-  let hasProjectSource = false;
-  for (const key of PROJECT_KEYS) {
-    if (!params.has(key)) continue;
-    project[key] = params.get(key) ?? '';
-    hasProjectSource = true;
-  }
+  const project = Object.fromEntries(
+    PROJECT_KEYS.filter((key) => params.has(key)).map((key) => [key, params.get(key) ?? '']),
+  );
 
-  return hasProjectSource ? project : null;
+  return Object.keys(project).length ? project : null;
 }

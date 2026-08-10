@@ -1,8 +1,3 @@
-import '@fontsource/inter/latin-400.css';
-import '@fontsource/inter/latin-500.css';
-import '@fontsource/inter/latin-600.css';
-import '@fontsource/fira-code/latin-400.css';
-import '@fontsource/fira-code/latin-500.css';
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { buildProjectUrl, readProjectFromHash } from './project-url.js';
 import './styles.css';
@@ -68,6 +63,7 @@ body {
 .logo {
   display: block;
   width: min(368px, 82vw);
+  aspect-ratio: 3 / 1;
   height: auto;
   cursor: pointer;
   filter: drop-shadow(0 14px 26px rgb(228 59 68 / 8%));
@@ -185,28 +181,34 @@ function applyEditorTheme() {
   editorRuntime?.applyEditorTheme(theme, codeTheme);
 }
 
-function readCodeFromHash() {
-  const values = { ...DEFAULTS };
-  const hash = window.location.hash;
-  if (!hash) return values;
+function safeDecompress(encoded) {
+  try {
+    const decoded = decompressFromEncodedURIComponent(encoded);
+    return decoded === null ? undefined : decoded;
+  } catch {
+    // A malformed hash should never prevent mylab from opening.
+    return undefined;
+  }
+}
 
-  const plainProject = readProjectFromHash(hash);
-  if (plainProject) return { ...values, ...plainProject };
-
-  const params = new URLSearchParams(hash.slice(1));
+function decodeCompressedHash(params, defaults) {
+  const values = { ...defaults };
   for (const key of Object.keys(values)) {
     const encoded = params.get(key);
-    if (!encoded) continue;
-
-    try {
-      const decoded = decompressFromEncodedURIComponent(encoded);
-      if (decoded !== null) values[key] = decoded;
-    } catch {
-      // A malformed hash should never prevent mylab from opening.
-    }
+    const decoded = encoded ? safeDecompress(encoded) : undefined;
+    if (decoded !== undefined) values[key] = decoded;
   }
-
   return values;
+}
+
+function readCodeFromHash() {
+  const hash = window.location.hash;
+  if (!hash) return { ...DEFAULTS };
+
+  const plainProject = readProjectFromHash(hash);
+  if (plainProject) return { ...DEFAULTS, ...plainProject };
+
+  return decodeCompressedHash(new URLSearchParams(hash.slice(1)), DEFAULTS);
 }
 
 function getCode() {
@@ -403,6 +405,29 @@ function resetMylab() {
   showToast('mylab reset');
 }
 
+function getTransitionOrigin(event) {
+  const buttonRect = event.currentTarget.getBoundingClientRect();
+  const x = event.clientX || buttonRect.left + buttonRect.width / 2;
+  const y = event.clientY || buttonRect.top + buttonRect.height / 2;
+  return { x, y };
+}
+
+function animateThemeTransition({ x, y }) {
+  const radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+  const small = `circle(0px at ${x}px ${y}px)`;
+  const large = `circle(${radius}px at ${x}px ${y}px)`;
+  const isDark = theme === 'dark';
+
+  document.documentElement.animate(
+    { clipPath: isDark ? [large, small] : [small, large] },
+    {
+      duration: 400,
+      easing: 'ease-in',
+      pseudoElement: isDark ? '::view-transition-old(root)' : '::view-transition-new(root)',
+    },
+  );
+}
+
 function toggleTheme(event) {
   const nextTheme = theme === 'dark' ? 'light' : 'dark';
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -412,29 +437,13 @@ function toggleTheme(event) {
     return;
   }
 
-  const buttonRect = event.currentTarget.getBoundingClientRect();
-  const x = event.clientX || buttonRect.left + buttonRect.width / 2;
-  const y = event.clientY || buttonRect.top + buttonRect.height / 2;
-  const radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
-  const smallCircle = `circle(0px at ${x}px ${y}px)`;
-  const largeCircle = `circle(${radius}px at ${x}px ${y}px)`;
-
-  const transition = document.startViewTransition(() => {
+  // Event.currentTarget is cleared once this click handler returns, but the
+  // View Transition is ready asynchronously. Capture the origin now.
+  const origin = getTransitionOrigin(event);
+  document.startViewTransition(() => {
     theme = nextTheme;
     applyTheme();
-  });
-
-  transition.ready.then(() => {
-    const isDark = theme === 'dark';
-    document.documentElement.animate(
-      { clipPath: isDark ? [largeCircle, smallCircle] : [smallCircle, largeCircle] },
-      {
-        duration: 400,
-        easing: 'ease-in',
-        pseudoElement: isDark ? '::view-transition-old(root)' : '::view-transition-new(root)',
-      },
-    );
-  });
+  }).ready.then(() => animateThemeTransition(origin));
 }
 
 function toggleFullscreen() {
@@ -449,20 +458,28 @@ function setEditorPaneSize(section, size) {
   section.style.flex = `0 0 ${Math.max(EDITOR_HEADER_HEIGHT, size)}px`;
 }
 
+function isOpenSection(section) {
+  return section.classList.contains('is-open');
+}
+
+function computeOpenSectionHeight(openCount) {
+  const closedSpace = (editorSections.length - openCount) * EDITOR_HEADER_HEIGHT;
+  const splitterSpace = editorSplitters.reduce((total, splitter) => total + splitter.offsetHeight, 0);
+  const openSpace = Math.max(0, editorStack.clientHeight - closedSpace - splitterSpace);
+  return openSpace / openCount;
+}
+
+function applyEditorPaneLayout(openSections) {
+  const openHeight = computeOpenSectionHeight(openSections.length);
+  for (const section of editorSections) {
+    setEditorPaneSize(section, isOpenSection(section) ? openHeight : EDITOR_HEADER_HEIGHT);
+  }
+}
+
 function layoutEditorPanes() {
   if (!editorStack) return;
-
-  const openSections = editorSections.filter((section) => section.classList.contains('is-open'));
-  if (!openSections.length) return;
-
-  const closedSpace = (editorSections.length - openSections.length) * EDITOR_HEADER_HEIGHT;
-  const splitterSpace = editorSplitters.reduce((total, sectionSplitter) => total + sectionSplitter.offsetHeight, 0);
-  const openSpace = Math.max(0, editorStack.clientHeight - closedSpace - splitterSpace);
-  const openHeight = openSpace / openSections.length;
-
-  for (const section of editorSections) {
-    setEditorPaneSize(section, section.classList.contains('is-open') ? openHeight : EDITOR_HEADER_HEIGHT);
-  }
+  const openSections = editorSections.filter(isOpenSection);
+  if (openSections.length) applyEditorPaneLayout(openSections);
 }
 
 function requestEditorMeasures() {
@@ -511,29 +528,33 @@ function toggleSection(section) {
   requestEditorMeasures();
 }
 
+function sectionMinimum(section) {
+  return section.classList.contains('is-open') ? EDITOR_MIN_OPEN_HEIGHT : EDITOR_HEADER_HEIGHT;
+}
+
+function autoOpenSection(section, height) {
+  if (!section.classList.contains('is-open') && height > EDITOR_OPEN_THRESHOLD) {
+    section.classList.add('is-open');
+  }
+}
+
 function updateEditorSplit(splitterElement, clientY) {
   const previousSection = splitterElement.previousElementSibling;
   const nextSection = splitterElement.nextElementSibling;
   if (!previousSection?.matches('.editor-section') || !nextSection?.matches('.editor-section')) return;
 
   const previousRect = previousSection.getBoundingClientRect();
-  const nextRect = nextSection.getBoundingClientRect();
-  const totalHeight = previousRect.height + nextRect.height;
-  const previousWasOpen = previousSection.classList.contains('is-open');
-  const nextWasOpen = nextSection.classList.contains('is-open');
-  const previousMinimum = previousWasOpen ? EDITOR_MIN_OPEN_HEIGHT : EDITOR_HEADER_HEIGHT;
-  const nextMinimum = nextWasOpen ? EDITOR_MIN_OPEN_HEIGHT : EDITOR_HEADER_HEIGHT;
+  const totalHeight = previousRect.height + nextSection.getBoundingClientRect().height;
   const previousHeight = Math.min(
-    Math.max(clientY - previousRect.top, previousMinimum),
-    totalHeight - nextMinimum,
+    Math.max(clientY - previousRect.top, sectionMinimum(previousSection)),
+    totalHeight - sectionMinimum(nextSection),
   );
-  const nextHeight = totalHeight - previousHeight;
 
-  if (!previousWasOpen && previousHeight > EDITOR_OPEN_THRESHOLD) previousSection.classList.add('is-open');
-  if (!nextWasOpen && nextHeight > EDITOR_OPEN_THRESHOLD) nextSection.classList.add('is-open');
+  autoOpenSection(previousSection, previousHeight);
+  autoOpenSection(nextSection, totalHeight - previousHeight);
 
   setEditorPaneSize(previousSection, previousHeight);
-  setEditorPaneSize(nextSection, nextHeight);
+  setEditorPaneSize(nextSection, totalHeight - previousHeight);
   syncSectionAccessibility();
   splitterElement.setAttribute('aria-valuenow', String(Math.round(previousHeight)));
   ensureOpenEditors();
@@ -591,6 +612,31 @@ function updateSplit(clientX, clientY) {
   shell.style.setProperty('--preview-size', `${size}px`);
 }
 
+const ARROW_STEP = 24;
+
+const splitAdjusters = {
+  stacked: {
+    keys: { ArrowDown: ARROW_STEP, ArrowUp: -ARROW_STEP },
+    min: 220,
+    get current() { return parseFloat(getComputedStyle(shell).gridTemplateRows.split(' ')[0]) || 220; },
+    get max() { return window.innerHeight - 360; },
+    apply(value) { shell.style.gridTemplateRows = `${value}px 1px minmax(500px, 1fr)`; },
+  },
+  side: {
+    keys: { ArrowRight: ARROW_STEP, ArrowLeft: -ARROW_STEP },
+    min: 260,
+    get current() { return parseFloat(getComputedStyle(shell).getPropertyValue('--preview-size')) || window.innerWidth / 2; },
+    get max() { return window.innerWidth - 340; },
+    apply(value) { shell.style.setProperty('--preview-size', `${value}px`); },
+  },
+};
+
+function adjustSplit(adjuster, key) {
+  const direction = adjuster.keys[key];
+  if (direction === undefined) return;
+  adjuster.apply(Math.min(Math.max(adjuster.current + direction, adjuster.min), adjuster.max));
+}
+
 function setupSplitter() {
   let dragging = false;
 
@@ -613,19 +659,12 @@ function setupSplitter() {
 
   splitter.addEventListener('pointerup', stopDragging);
   splitter.addEventListener('pointercancel', stopDragging);
+  const arrowKeys = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
   splitter.addEventListener('keydown', (event) => {
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+    if (!arrowKeys.has(event.key)) return;
     event.preventDefault();
-    const isStacked = window.matchMedia('(max-width: 800px)').matches;
-    if (isStacked) {
-      const current = parseFloat(getComputedStyle(shell).gridTemplateRows.split(' ')[0]);
-      const direction = event.key === 'ArrowDown' ? 24 : event.key === 'ArrowUp' ? -24 : 0;
-      if (direction) shell.style.gridTemplateRows = `${Math.min(Math.max(current + direction, 220), window.innerHeight - 360)}px 1px minmax(500px, 1fr)`;
-    } else {
-      const current = parseFloat(getComputedStyle(shell).getPropertyValue('--preview-size')) || window.innerWidth / 2;
-      const direction = event.key === 'ArrowRight' ? 24 : event.key === 'ArrowLeft' ? -24 : 0;
-      if (direction) shell.style.setProperty('--preview-size', `${Math.min(Math.max(current + direction, 260), window.innerWidth - 340)}px`);
-    }
+    const adjuster = window.matchMedia('(max-width: 800px)').matches ? splitAdjusters.stacked : splitAdjusters.side;
+    adjustSplit(adjuster, event.key);
   });
 }
 
@@ -667,5 +706,16 @@ setupSections();
 setupActions();
 setupSplitter();
 setupEditorSplitters();
-window.setTimeout(() => ensureOpenEditors(), 3000);
+// The LCP element lives inside the preview iframe (the hero logo). Load the
+// preview first, then defer CodeMirror until the iframe has painted so its
+// ~160 KB of JS evaluation never blocks the iframe's subresource requests
+// or first paint. The placeholder matches CodeMirror's layout exactly, so
+// there is no visible layout shift while waiting.
+preview.addEventListener('load', () => {
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(ensureOpenEditors, { timeout: 2000 });
+  } else {
+    setTimeout(ensureOpenEditors, 200);
+  }
+}, { once: true });
 updatePreview();
