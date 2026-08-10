@@ -22,6 +22,14 @@ Build for production with:
 pnpm build
 ```
 
+## Agent skill
+
+Install the HTML-to-mylab sharing skill with:
+
+```bash
+npx skills add ws-rush/mylab --skill mylab-share
+```
+
 ## Credits
 
 The playground experience is inspired by and gives credit to UnoCSS Playground.
