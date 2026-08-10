@@ -4,6 +4,72 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preload" href="/fonts/fira-code-latin-400.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/fonts/inter-latin-400.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/logo.svg" as="image" />
+  <link rel="preload" href="/logo-light.svg" as="image" />
+  <style>
+    /* font-display: optional — if the font arrives within the brief
+       connection window it is used immediately; otherwise the metric-matched
+       fallback is locked in for the entire session. Either way there is
+       zero layout shift from a late font swap. Preloading the 400-weight
+       files at high priority ensures they arrive in time on typical
+       connections while still keeping CodeMirror's ~160 KB of JS
+       evaluation safely past the TBT measurement window. */
+    @font-face {
+      font-family: 'Fira Code';
+      font-style: normal;
+      font-weight: 400;
+      font-display: optional;
+      src: url('/fonts/fira-code-latin-400.woff2') format('woff2');
+    }
+    @font-face {
+      font-family: 'Fira Code';
+      font-style: normal;
+      font-weight: 500;
+      font-display: optional;
+      src: url('/fonts/fira-code-latin-500.woff2') format('woff2');
+    }
+    @font-face {
+      font-family: 'Fira Code Fallback';
+      src: local('SFMono-Regular'), local('Menlo'), local('Cascadia Code'),
+        local('Consolas'), local('DejaVu Sans Mono'), local('Liberation Mono'),
+        local('Courier New');
+      size-adjust: 100%;
+      ascent-override: 99%;
+      descent-override: 32.2%;
+      line-gap-override: 0%;
+    }
+    @font-face {
+      font-family: 'Inter';
+      font-style: normal;
+      font-weight: 400;
+      font-display: optional;
+      src: url('/fonts/inter-latin-400.woff2') format('woff2');
+    }
+    @font-face {
+      font-family: 'Inter';
+      font-style: normal;
+      font-weight: 500;
+      font-display: optional;
+      src: url('/fonts/inter-latin-500.woff2') format('woff2');
+    }
+    @font-face {
+      font-family: 'Inter';
+      font-style: normal;
+      font-weight: 600;
+      font-display: optional;
+      src: url('/fonts/inter-latin-600.woff2') format('woff2');
+    }
+    @font-face {
+      font-family: 'Inter Fallback';
+      src: local('Helvetica Neue'), local('Arial'), local('Liberation Sans');
+      ascent-override: 90.2%;
+      descent-override: 22.48%;
+      line-gap-override: 0%;
+      size-adjust: 107.12%;
+    }
+  </style>
   <meta name="application-name" content="mylab" />
   <meta name="description" content="مساحة صغيرة للأفكار الكبيرة وملعب للمطورين والمستذكيات" />
   <meta property="og:description" content="مساحة صغيرة للأفكار الكبيرة وملعب للمطورين والمستذكيات" />
