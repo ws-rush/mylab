@@ -5,8 +5,8 @@ const PROJECT_URL_VERSION = '1';
  * Build an agent-friendly mylab link. Source is stored in the URL fragment,
  * so it is not sent to the server and can be decoded by the static app.
  */
-export function buildProjectUrl(project = {}, baseUrl = 'https://mylab.wsm.one/play') {
-  const url = new URL(baseUrl, 'https://mylab.wsm.one');
+export function buildProjectUrl(project = {}, baseUrl = 'https://mylab.byrush.me/play') {
+  const url = new URL(baseUrl, 'https://mylab.byrush.me');
   const params = new URLSearchParams({
     v: PROJECT_URL_VERSION,
     html: String(project.html ?? ''),
