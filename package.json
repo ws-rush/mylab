@@ -26,12 +26,5 @@
     "@vitest/browser-playwright": "^4.1.10",
     "vite": "^8.2.1",
     "vitest": "^4.1.10"
-  },
-  "devEngines": {
-    "packageManager": {
-      "name": "nub",
-      "version": "^0.7.1",
-      "onFail": "ignore"
-    }
   }
 }
