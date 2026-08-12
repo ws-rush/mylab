@@ -12,14 +12,22 @@ A small browser-based playground for experimenting with HTML, CSS, and JavaScrip
 ## Getting started
 
 ```bash
-pnpm install
-pnpm dev
+nub install
+nub dev
 ```
 
 Build for production with:
 
 ```bash
-pnpm build
+nub build
+```
+
+## Agent skill
+
+Install the HTML-to-mylab sharing skill with:
+
+```bash
+npx skills add ws-rush/mylab --skill mylab-share
 ```
 
 ## Credits
