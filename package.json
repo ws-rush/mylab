@@ -1,7 +1,7 @@
 {
   "name": "mylab",
   "version": "0.1.0",
-  "homepage": "https://mylab.wsm.one/play",
+  "homepage": "https://mylab.byrush.me/play",
   "type": "module",
   "scripts": {
     "dev": "vite",
