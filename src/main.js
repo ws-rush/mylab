@@ -7,6 +7,14 @@ const LOGO_PATHS = {
   light: '/logo-light.svg',
 };
 
+const THEME_STORAGE_KEY = 'mylab-theme';
+
+const THEME_ICONS = {
+  system: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>`,
+  light: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path></svg>`,
+  dark: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>`,
+};
+
 const DEFAULTS = {
   html: `<main class="hero" dir="rtl">
   <img class="logo" src="/logo.svg" alt="ملعب" />
@@ -127,13 +135,48 @@ const codeThemeOptions = {
     { value: 'contrast', label: 'High contrast' },
   ],
 };
+function getSavedThemePreference() {
+  try {
+    const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (saved === 'system' || saved === 'light' || saved === 'dark') {
+      return saved;
+    }
+  } catch {}
+  return 'system';
+}
+
+function getSystemTheme() {
+  return window.matchMedia?.('(prefers-color-scheme: dark)')?.matches ? 'dark' : 'light';
+}
+
+function resolveTheme(preference) {
+  if (preference === 'system') return getSystemTheme();
+  return preference;
+}
+
+function getNextThemePreference(current) {
+  if (current === 'system') return 'light';
+  if (current === 'light') return 'dark';
+  return 'system';
+}
+
+function getThemeLabel(preference, resolved) {
+  if (preference === 'system') {
+    const resolvedLabel = resolved === 'dark' ? 'Dark' : 'Light';
+    return `Theme: System (${resolvedLabel})`;
+  }
+  return preference === 'dark' ? 'Theme: Dark' : 'Theme: Light';
+}
+
 let codeTheme = 'default';
-let theme = getInitialTheme();
+let themePreference = getSavedThemePreference();
+let resolvedTheme = resolveTheme(themePreference);
 let updateTimer;
 let toastTimer;
 
 const shell = document.querySelector('#app-shell');
 const brandLogo = document.querySelector('.brand-logo');
+const themeButton = document.querySelector('#theme-button');
 const previewPane = document.querySelector('#preview-pane');
 const preview = document.querySelector('#preview');
 const toast = document.querySelector('#toast');
@@ -151,14 +194,16 @@ const initialCode = readCodeFromHash();
 const codeValues = { ...initialCode };
 document.querySelector('.editor-placeholder')?.replaceChildren(document.createTextNode(codeValues.html));
 
-function getInitialTheme() {
-  const saved = window.localStorage.getItem('mylab-theme');
-  if (saved === 'dark' || saved === 'light') return saved;
-  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+function updateThemeButton() {
+  if (!themeButton) return;
+  const label = getThemeLabel(themePreference, resolvedTheme);
+  themeButton.innerHTML = THEME_ICONS[themePreference] || THEME_ICONS.system;
+  themeButton.title = label;
+  themeButton.setAttribute('aria-label', label);
 }
 
 function syncCodeThemeOptions() {
-  const options = codeThemeOptions[theme];
+  const options = codeThemeOptions[resolvedTheme];
   if (!options.some((option) => option.value === codeTheme)) codeTheme = 'default';
   codeThemeSelect.replaceChildren(
     ...options.map(({ value, label }) => new Option(label, value)),
@@ -168,7 +213,7 @@ function syncCodeThemeOptions() {
 
 function applyEditorTheme() {
   document.documentElement.dataset.codeTheme = codeTheme;
-  editorRuntime?.applyEditorTheme(theme, codeTheme);
+  editorRuntime?.applyEditorTheme(resolvedTheme, codeTheme);
 }
 
 function safeDecompress(encoded) {
@@ -225,7 +270,7 @@ function loadEditorRuntime() {
   if (!editorRuntimePromise) {
     editorRuntimePromise = import('./editor-runtime.js').then((runtime) => {
       editorRuntime = runtime;
-      runtime.applyEditorTheme(theme, codeTheme);
+      runtime.applyEditorTheme(resolvedTheme, codeTheme);
       return runtime;
     });
   }
@@ -266,9 +311,12 @@ function setEditorValue(key, value) {
 }
 
 function applyTheme() {
-  document.documentElement.dataset.theme = theme;
-  brandLogo?.setAttribute('src', LOGO_PATHS[theme]);
-  window.localStorage.setItem('mylab-theme', theme);
+  document.documentElement.dataset.theme = resolvedTheme;
+  brandLogo?.setAttribute('src', LOGO_PATHS[resolvedTheme]);
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, themePreference);
+  } catch {}
+  updateThemeButton();
   syncCodeThemeOptions();
   applyEditorTheme();
 
@@ -277,7 +325,7 @@ function applyTheme() {
 
 function buildPreviewDocument() {
   const code = getCode();
-  const previewMode = theme === 'dark' ? 'dark' : 'light';
+  const previewMode = resolvedTheme === 'dark' ? 'dark' : 'light';
   const html = code.html.replaceAll('src="/logo.svg"', `src="${LOGO_PATHS[previewMode]}"`);
   const css = code.css;
   const js = code.js;
@@ -466,6 +514,9 @@ function resetMylab() {
 }
 
 function getTransitionOrigin(event) {
+  if (!event?.currentTarget) {
+    return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+  }
   const buttonRect = event.currentTarget.getBoundingClientRect();
   const x = event.clientX || buttonRect.left + buttonRect.width / 2;
   const y = event.clientY || buttonRect.top + buttonRect.height / 2;
@@ -476,7 +527,7 @@ function animateThemeTransition({ x, y }) {
   const radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
   const small = `circle(0px at ${x}px ${y}px)`;
   const large = `circle(${radius}px at ${x}px ${y}px)`;
-  const isDark = theme === 'dark';
+  const isDark = resolvedTheme === 'dark';
 
   document.documentElement.animate(
     { clipPath: isDark ? [large, small] : [small, large] },
@@ -489,10 +540,14 @@ function animateThemeTransition({ x, y }) {
 }
 
 function toggleTheme(event) {
-  const nextTheme = theme === 'dark' ? 'light' : 'dark';
-  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (typeof document.startViewTransition !== 'function' || prefersReducedMotion) {
-    theme = nextTheme;
+  const nextPreference = getNextThemePreference(themePreference);
+  const nextResolvedTheme = resolveTheme(nextPreference);
+  const hasVisualChange = nextResolvedTheme !== resolvedTheme;
+
+  const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if (!hasVisualChange || typeof document.startViewTransition !== 'function' || prefersReducedMotion) {
+    themePreference = nextPreference;
+    resolvedTheme = nextResolvedTheme;
     applyTheme();
     return;
   }
@@ -500,10 +555,41 @@ function toggleTheme(event) {
   // Event.currentTarget is cleared once this click handler returns, but the
   // View Transition is ready asynchronously. Capture the origin now.
   const origin = getTransitionOrigin(event);
+  themePreference = nextPreference;
+  resolvedTheme = nextResolvedTheme;
   document.startViewTransition(() => {
-    theme = nextTheme;
     applyTheme();
   }).ready.then(() => animateThemeTransition(origin));
+}
+
+const systemThemeMediaQuery = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+
+function handleSystemThemeChange() {
+  if (themePreference !== 'system') return;
+  const nextResolvedTheme = getSystemTheme();
+  if (nextResolvedTheme === resolvedTheme) {
+    updateThemeButton();
+    return;
+  }
+
+  const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if (typeof document.startViewTransition !== 'function' || prefersReducedMotion) {
+    resolvedTheme = nextResolvedTheme;
+    applyTheme();
+    return;
+  }
+
+  const centerOrigin = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+  resolvedTheme = nextResolvedTheme;
+  document.startViewTransition(() => {
+    applyTheme();
+  }).ready.then(() => animateThemeTransition(centerOrigin));
+}
+
+if (typeof systemThemeMediaQuery?.addEventListener === 'function') {
+  systemThemeMediaQuery.addEventListener('change', handleSystemThemeChange);
+} else if (typeof systemThemeMediaQuery?.addListener === 'function') {
+  systemThemeMediaQuery.addListener(handleSystemThemeChange);
 }
 
 function toggleFullscreen() {
@@ -747,7 +833,7 @@ function setupActions() {
     applyEditorTheme();
     if (codeTheme !== 'default' && codeTheme !== 'contrast') {
       void loadEditorRuntime()
-        .then((runtime) => runtime.loadNamedEditorTheme(theme, codeTheme))
+        .then((runtime) => runtime.loadNamedEditorTheme(resolvedTheme, codeTheme))
         .catch((error) => {
           console.error('Unable to load editor theme', error);
           showToast('Editor theme unavailable');
@@ -769,6 +855,8 @@ function dismissAppSplash() {
 window.mylab = Object.freeze({
   buildProjectUrl,
   getProjectUrl: () => buildProjectUrl(getCode()),
+  getThemePreference: () => themePreference,
+  getResolvedTheme: () => resolvedTheme,
 });
 
 applyTheme();
