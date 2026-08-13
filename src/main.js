@@ -137,17 +137,7 @@ const brandLogo = document.querySelector('.brand-logo');
 const previewPane = document.querySelector('#preview-pane');
 const preview = document.querySelector('#preview');
 const toast = document.querySelector('#toast');
-let previewReady = false;
 let previewInitialized = false;
-let pendingPreviewUpdate = null;
-
-preview.addEventListener('load', () => {
-  previewReady = true;
-  if (!pendingPreviewUpdate) return;
-  const update = pendingPreviewUpdate;
-  pendingPreviewUpdate = null;
-  postPreviewUpdate(update);
-});
 const splitter = document.querySelector('#splitter');
 const editorStack = document.querySelector('#editor-stack');
 const editorSections = [...document.querySelectorAll('.editor-section')];
@@ -286,12 +276,123 @@ function applyTheme() {
 }
 
 function buildPreviewDocument() {
+  const code = getCode();
   const previewMode = theme === 'dark' ? 'dark' : 'light';
+  const html = code.html.replaceAll('src="/logo.svg"', `src="${LOGO_PATHS[previewMode]}"`);
+  const css = code.css;
+  const js = code.js;
+  const dark = previewMode === 'dark';
+
+  const foucGuard = `<style id="mylab-hide-fouc">
+    html { opacity: 0 !important; visibility: hidden !important; }
+    html.mylab-ready { opacity: 1 !important; visibility: visible !important; transition: opacity 0.15s ease-in-out !important; }
+  </style>
+  <script id="mylab-fouc-script">
+    (function() {
+      let revealed = false;
+      let checkCount = 0;
+      const initialStyleCount = document.head.querySelectorAll('style').length;
+
+      const reveal = function() {
+        if (revealed) return;
+        revealed = true;
+        document.documentElement.classList.add('mylab-ready');
+        try {
+          window.parent.postMessage({ source: 'mylab-preview', type: 'ready' }, '*');
+        } catch (e) {}
+      };
+
+      const checkReady = function() {
+        checkCount++;
+        const hasTailwindScript = !!document.querySelector('script[src*="tailwindcss"]');
+        const currentStyleCount = document.head.querySelectorAll('style').length;
+        const tailwindStyleAdded = currentStyleCount > initialStyleCount || !!document.querySelector('style[id*="tailwind"]');
+
+        if (hasTailwindScript && !tailwindStyleAdded && checkCount < 40) {
+          setTimeout(checkReady, 25);
+          return;
+        }
+
+        const hasVueScript = !!document.querySelector('script[src*="pocket-vue"]') || !!document.querySelector('script[src*="vue"]') || !!document.querySelector('script[src*="alpine"]');
+        const vScopeContainers = document.querySelectorAll('[v-scope]');
+        let vueMounted = true;
+        if (hasVueScript && vScopeContainers.length > 0) {
+          vueMounted = Array.from(vScopeContainers).some(function(el) {
+            return el.children.length > 0 || el.textContent.trim().length > 0;
+          });
+        }
+
+        if (hasVueScript && !vueMounted && checkCount < 40) {
+          setTimeout(checkReady, 25);
+          return;
+        }
+
+        requestAnimationFrame(function() {
+          requestAnimationFrame(function() {
+            setTimeout(reveal, 80);
+          });
+        });
+      };
+
+      if (document.readyState === 'complete') {
+        checkReady();
+      } else {
+        window.addEventListener('load', checkReady, { once: true });
+        setTimeout(checkReady, 1500);
+      }
+    })();
+  </script>`;
+
+  const isFullDoc = /^\s*<!doctype\s+/i.test(html) || /^\s*<html[\s>]/i.test(html);
+
+  if (isFullDoc) {
+    let fullDoc = html;
+
+    if (dark) {
+      if (/<html[^>]*class=["'][^"']*dark[^"']*["']/i.test(fullDoc)) {
+        // already has dark class
+      } else if (/<html[^>]*class=["']/i.test(fullDoc)) {
+        fullDoc = fullDoc.replace(/<html([^>]*)class=["']([^"']*)["']/i, '<html$1class="$2 dark"');
+      } else {
+        fullDoc = fullDoc.replace(/<html/i, '<html class="dark"');
+      }
+    }
+
+    if (/<head/i.test(fullDoc)) {
+      fullDoc = fullDoc.replace(/<head([^>]*)>/i, `<head$1>\n${foucGuard}`);
+    } else {
+      fullDoc = `${foucGuard}\n${fullDoc}`;
+    }
+
+    if (css && css.trim()) {
+      const styleTag = `<style id="mylab-user-css">\n${css}\n</style>`;
+      if (/<\/head>/i.test(fullDoc)) {
+        fullDoc = fullDoc.replace(/<\/head>/i, `${styleTag}\n</head>`);
+      } else if (/<body/i.test(fullDoc)) {
+        fullDoc = fullDoc.replace(/<body/i, `${styleTag}\n<body`);
+      } else {
+        fullDoc = `${styleTag}\n${fullDoc}`;
+      }
+    }
+
+    if (js && js.trim()) {
+      const scriptTag = `<script id="mylab-user-js">\ntry {\n${js}\n} catch(err) { console.error(err); }\n</script>`;
+      if (/<\/body>/i.test(fullDoc)) {
+        fullDoc = fullDoc.replace(/<\/body>/i, `${scriptTag}\n</body>`);
+      } else {
+        fullDoc = `${fullDoc}\n${scriptTag}`;
+      }
+    }
+
+    return fullDoc;
+  }
+
   return `<!doctype html>
-<html lang="en" class="${previewMode === 'dark' ? 'dark' : ''}">
+<html lang="en" class="${dark ? 'dark' : ''}">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    ${foucGuard}
     <style>
       html,
       body {
@@ -312,72 +413,31 @@ function buildPreviewDocument() {
         background: #050505;
       }
     </style>
-    <style id="preview-style"></style>
+    ${css && css.trim() ? `<style id="preview-style">\n${css}\n</style>` : '<style id="preview-style"></style>'}
   </head>
-  <body></body>
-  <script>
-    const activateMarkupScripts = () => {
-      for (const script of [...document.body.querySelectorAll('script')]) {
-        const replacement = document.createElement('script');
-        for (const attribute of script.attributes) {
-          replacement.setAttribute(attribute.name, attribute.value);
-        }
-        replacement.textContent = script.textContent;
-        script.replaceWith(replacement);
-      }
-    };
-
-    const updatePreview = ({ html, css, js, dark }) => {
-      document.documentElement.classList.toggle('dark', dark);
-      document.querySelector('#preview-style').textContent = css;
-      document.body.innerHTML = html;
-      activateMarkupScripts();
-      try {
-        new Function(js)();
-      } catch (error) {
-        console.error(error);
-      }
-    };
-
-    window.addEventListener('message', (event) => {
-      if (event.source !== window.parent) return;
-      if (event.data?.source !== 'mylab-preview' || event.data.type !== 'update') return;
-      updatePreview(event.data);
-    });
-  </script>
+  <body>
+    ${html}
+    ${js && js.trim() ? `<script>\ntry {\n${js}\n} catch (error) { console.error(error); }\n</script>` : ''}
+  </body>
 </html>`;
 }
 
-function getPreviewUpdate() {
-  const code = getCode();
-  const previewMode = theme === 'dark' ? 'dark' : 'light';
-  return {
-    ...code,
-    html: code.html.replaceAll('src="/logo.svg"', `src="${LOGO_PATHS[previewMode]}"`),
-    dark: previewMode === 'dark',
-  };
-}
-
-function postPreviewUpdate(update) {
-  if (!previewReady) {
-    pendingPreviewUpdate = update;
-    return;
+// Add message listener for preview ready signal
+window.addEventListener('message', (event) => {
+  if (event.data?.source === 'mylab-preview' && event.data?.type === 'ready') {
+    if (preview) preview.style.opacity = '1';
   }
-
-  preview.contentWindow.postMessage(
-    { source: 'mylab-preview', type: 'update', ...update },
-    '*',
-  );
-}
+});
 
 function updatePreview() {
-  if (!previewInitialized) {
-    previewInitialized = true;
+  previewInitialized = true;
+  if (preview) {
+    preview.style.transition = 'opacity 0.15s ease-in-out';
+    preview.style.opacity = '0';
     preview.srcdoc = buildPreviewDocument();
   }
-
-  postPreviewUpdate(getPreviewUpdate());
 }
+
 
 function showToast(message) {
   window.clearTimeout(toastTimer);
@@ -696,6 +756,16 @@ function setupActions() {
   });
 }
 
+function dismissAppSplash() {
+  const splash = document.querySelector('#app-splash');
+  const appShell = document.querySelector('#app-shell');
+  appShell?.classList.add('is-loaded');
+  if (splash) {
+    splash.classList.add('is-hidden');
+    setTimeout(() => splash.remove(), 350);
+  }
+}
+
 window.mylab = Object.freeze({
   buildProjectUrl,
   getProjectUrl: () => buildProjectUrl(getCode()),
@@ -706,11 +776,6 @@ setupSections();
 setupActions();
 setupSplitter();
 setupEditorSplitters();
-// The LCP element lives inside the preview iframe (the hero logo). Load the
-// preview first, then defer CodeMirror until the iframe has painted so its
-// ~160 KB of JS evaluation never blocks the iframe's subresource requests
-// or first paint. The placeholder matches CodeMirror's layout exactly, so
-// there is no visible layout shift while waiting.
 preview.addEventListener('load', () => {
   if ('requestIdleCallback' in window) {
     requestIdleCallback(ensureOpenEditors, { timeout: 2000 });
@@ -719,3 +784,5 @@ preview.addEventListener('load', () => {
   }
 }, { once: true });
 updatePreview();
+
+requestAnimationFrame(dismissAppSplash);
