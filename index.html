@@ -125,10 +125,9 @@
     (function() {
       try {
         var saved = localStorage.getItem('mylab-theme');
-        var isLight = saved === 'light' || (!saved && window.matchMedia('(prefers-color-scheme: light)').matches);
-        if (isLight) {
-          document.documentElement.dataset.theme = 'light';
-        }
+        var systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var isLight = saved === 'light' || ((!saved || saved === 'system') && !systemDark);
+        document.documentElement.dataset.theme = isLight ? 'light' : 'dark';
       } catch(e) {}
     })();
   </script>
@@ -206,12 +205,11 @@
               <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M21 16v5h-5"></path>
             </svg>
           </button>
-          <button class="icon-button" id="theme-button" type="button" title="Toggle theme" aria-label="Toggle theme">
+          <button class="icon-button" id="theme-button" type="button" title="Theme preference" aria-label="Theme preference">
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path class="sun"
-                d="M12 4V2m0 20v-2M4 12H2m20 0h-2m-1.7-5.7-1.4 1.4M7.1 16.9l-1.4 1.4m0-12.7 1.4 1.4m9.8 9.9 1.4 1.4">
-              </path>
-              <circle cx="12" cy="12" r="3.5"></circle>
+              <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
             </svg>
           </button>
         </div>
