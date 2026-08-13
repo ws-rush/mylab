@@ -1,4 +1,8 @@
-import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
+import {
+  compressToEncodedURIComponent,
+  decompressFromEncodedURIComponent,
+  decompressFromBase64,
+} from 'lz-string';
 import { buildProjectUrl, readProjectFromHash } from './project-url.js';
 import './styles.css';
 
@@ -172,13 +176,23 @@ function applyEditorTheme() {
 }
 
 function safeDecompress(encoded) {
-  try {
-    const decoded = decompressFromEncodedURIComponent(encoded);
-    return decoded === null ? undefined : decoded;
-  } catch {
-    // A malformed hash should never prevent mylab from opening.
-    return undefined;
+  if (!encoded) return undefined;
+
+  // URLSearchParams converts '+' to ' '. Restore '+' for LZ-string URI/Base64 character sets.
+  const candidates = [encoded, encoded.replace(/ /g, '+')];
+
+  for (const str of candidates) {
+    try {
+      const decoded = decompressFromEncodedURIComponent(str);
+      if (decoded) return decoded;
+    } catch {}
+    try {
+      const decoded = decompressFromBase64(str);
+      if (decoded) return decoded;
+    } catch {}
   }
+
+  return undefined;
 }
 
 function decodeCompressedHash(params, defaults) {
