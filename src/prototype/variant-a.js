@@ -28,8 +28,7 @@ export class VariantA {
     }
     if (this.splitterEl) this.splitterEl.remove();
     if (this.sectionEl) this.sectionEl.remove();
-    // Trigger editor layout recalculation
-    window.dispatchEvent(new Event('resize'));
+    window.mylab?.layoutEditorPanes?.();
   }
 
   renderSkeleton() {
@@ -41,6 +40,10 @@ export class VariantA {
     this.splitterEl.className = 'editor-splitter prototype-var-a-splitter';
     this.splitterEl.setAttribute('role', 'separator');
     this.splitterEl.setAttribute('aria-label', 'Resize JavaScript and Console panes');
+    this.splitterEl.setAttribute('aria-orientation', 'horizontal');
+    this.splitterEl.setAttribute('aria-valuemin', '30');
+    this.splitterEl.setAttribute('aria-valuemax', '1000');
+    this.splitterEl.setAttribute('aria-valuenow', '50');
     this.splitterEl.setAttribute('tabindex', '0');
 
     // Create section
@@ -97,53 +100,10 @@ export class VariantA {
     editorStack.appendChild(this.splitterEl);
     editorStack.appendChild(this.sectionEl);
 
-    // Wire accordion toggle
-    const header = this.sectionEl.querySelector('.section-header');
-    header.addEventListener('click', (e) => {
-      if (e.target.closest('#var-a-quick-clear')) return;
-      this.sectionEl.classList.toggle('is-open');
-      header.setAttribute('aria-expanded', String(this.sectionEl.classList.contains('is-open')));
-      window.dispatchEvent(new Event('resize'));
-    });
-
-    // Make splitter interactive
-    this.setupSplitter(this.splitterEl, this.sectionEl);
-  }
-
-  setupSplitter(splitter, section) {
-    let dragging = false;
-    let startY = 0;
-    let startHeight = 0;
-
-    splitter.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
-      dragging = true;
-      startY = e.clientY;
-      startHeight = section.getBoundingClientRect().height;
-      splitter.setPointerCapture(e.pointerId);
-      document.body.style.cursor = 'row-resize';
-      e.preventDefault();
-    });
-
-    splitter.addEventListener('pointermove', (e) => {
-      if (!dragging) return;
-      const delta = startY - e.clientY;
-      const newHeight = Math.max(34, Math.min(600, startHeight + delta));
-      section.style.flex = `0 0 ${newHeight}px`;
-      if (!section.classList.contains('is-open') && newHeight > 50) {
-        section.classList.add('is-open');
-      }
-    });
-
-    const stopDrag = () => {
-      if (dragging) {
-        dragging = false;
-        document.body.style.cursor = '';
-      }
-    };
-
-    splitter.addEventListener('pointerup', stopDrag);
-    splitter.addEventListener('pointercancel', stopDrag);
+    // Register section and splitter with main app lifecycle
+    window.mylab?.setupSections?.();
+    window.mylab?.setupEditorSplitter?.(this.splitterEl);
+    window.mylab?.layoutEditorPanes?.();
   }
 
   bindEvents() {
@@ -175,7 +135,10 @@ export class VariantA {
 
     // Clear buttons
     this.sectionEl.querySelector('#var-a-clear-btn')?.addEventListener('click', () => logStore.clear());
-    this.sectionEl.querySelector('#var-a-quick-clear')?.addEventListener('click', () => logStore.clear());
+    this.sectionEl.querySelector('#var-a-quick-clear')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      logStore.clear();
+    });
   }
 
   update() {
