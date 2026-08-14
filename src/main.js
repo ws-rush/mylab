@@ -1,7 +1,6 @@
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { buildProjectUrl, readProjectFromHash } from './project-url.js';
-import { getPreviewInterceptorScript } from './prototype/console-engine.js';
-import { consolePrototypeApp } from './prototype/index.js';
+import { getPreviewConsoleInterceptorScript, setupConsoleUi, handleConsoleMessage, logStore } from './console.js';
 import './styles.css';
 
 const LOGO_PATHS = {
@@ -414,7 +413,7 @@ function buildPreviewDocument() {
       }
     }
 
-    const interceptor = getPreviewInterceptorScript();
+    const interceptor = getPreviewConsoleInterceptorScript();
 
     if (/<head/i.test(fullDoc)) {
       fullDoc = fullDoc.replace(/<head([^>]*)>/i, `<head$1>\n${interceptor}\n${foucGuard}`);
@@ -445,7 +444,7 @@ function buildPreviewDocument() {
     return fullDoc;
   }
 
-  const interceptor = getPreviewInterceptorScript();
+  const interceptor = getPreviewConsoleInterceptorScript();
 
   return `<!doctype html>
 <html lang="en" class="${dark ? 'dark' : ''}">
@@ -483,16 +482,19 @@ function buildPreviewDocument() {
 </html>`;
 }
 
-// Add message listener for preview ready signal
+// Add message listener for preview ready signal and console messages
 window.addEventListener('message', (event) => {
-  if (event.data?.source === 'mylab-preview' && event.data?.type === 'ready') {
-    if (preview) preview.style.opacity = '1';
+  if (event.data?.source === 'mylab-preview') {
+    if (event.data?.type === 'ready') {
+      if (preview) preview.style.opacity = '1';
+    }
+    handleConsoleMessage(event);
   }
 });
 
 function updatePreview() {
   previewInitialized = true;
-  consolePrototypeApp.notifyCodeReload();
+  logStore.onCodeReload();
   if (preview) {
     preview.style.transition = 'opacity 0.15s ease-in-out';
     preview.style.opacity = '0';
@@ -915,8 +917,7 @@ preview.addEventListener('load', () => {
     setTimeout(ensureOpenEditors, 200);
   }
 }, { once: true });
+setupConsoleUi();
 updatePreview();
-
-consolePrototypeApp.init();
 
 requestAnimationFrame(dismissAppSplash);

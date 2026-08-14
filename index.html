@@ -250,6 +250,52 @@
           </button>
           <div class="editor-container" id="editor-js"></div>
         </section>
+        <div class="editor-splitter" role="separator" aria-label="Resize JavaScript and Console panes" aria-orientation="horizontal" aria-valuemin="30" aria-valuemax="1000" aria-valuenow="50" tabindex="0"></div>
+        <section class="editor-section" data-editor="console" id="editor-console-section">
+          <div class="section-header console-header" role="button" tabindex="0" aria-expanded="false" aria-controls="editor-console">
+            <div class="header-left">
+              <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="m4 6 4 4 4-4"></path>
+              </svg>
+              <span class="header-title">Console</span>
+              <div class="header-badges">
+                <span class="badge badge-error is-hidden" id="console-badge-error">0</span>
+                <span class="badge badge-warn is-hidden" id="console-badge-warn">0</span>
+                <span class="badge badge-log is-hidden" id="console-badge-log">0</span>
+              </div>
+            </div>
+            <div class="header-quick-actions">
+              <button class="header-clear-btn" id="console-header-clear" type="button" title="Clear console" aria-label="Clear console">
+                <svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor">
+                  <path d="M2.5 1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1H3v9.5A1.5 1.5 0 0 0 4.5 15h7a1.5 1.5 0 0 0 1.5-1.5V4h.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1h-3.5a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1H2.5ZM4 4h8v9.5a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5V4Zm2.5 2a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 1 0v-5a.5.5 0 0 0-.5-.5Zm3 0a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 1 0v-5a.5.5 0 0 0-.5-.5Z"/>
+                </svg>
+                <span>Clear</span>
+              </button>
+            </div>
+          </div>
+          <div class="editor-container console-container" id="editor-console">
+            <div class="console-toolbar">
+              <div class="filter-pills" role="tablist">
+                <button class="filter-pill is-active" data-filter="all" type="button">All <span class="pill-count" id="console-count-all">0</span></button>
+                <button class="filter-pill" data-filter="log" type="button">Logs <span class="pill-count" id="console-count-logs">0</span></button>
+                <button class="filter-pill" data-filter="warn" type="button">Warn <span class="pill-count" id="console-count-warns">0</span></button>
+                <button class="filter-pill" data-filter="error" type="button">Errors <span class="pill-count" id="console-count-errors">0</span></button>
+              </div>
+              <div class="search-wrap">
+                <input type="text" class="console-search" id="console-search" placeholder="Filter logs..." aria-label="Filter console messages" />
+              </div>
+              <div class="toolbar-toggles">
+                <label class="toggle-label" title="Clear console when preview refreshes">
+                  <input type="checkbox" id="console-autoclear" checked />
+                  <span>Auto-clear</span>
+                </label>
+              </div>
+            </div>
+            <div class="console-log-stream" id="console-log-stream" role="log" aria-live="polite">
+              <div class="console-empty-state">No console output yet.</div>
+            </div>
+          </div>
+        </section>
       </div>
     </section>
   </main>
