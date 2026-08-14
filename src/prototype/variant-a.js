@@ -53,25 +53,27 @@ export class VariantA {
     this.sectionEl.id = 'editor-console-section';
 
     this.sectionEl.innerHTML = `
-      <button class="section-header console-header" type="button" aria-expanded="true" aria-controls="editor-console">
-        <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="m4 6 4 4 4-4"></path>
-        </svg>
-        <span class="header-title">Console</span>
-        <div class="header-badges">
-          <span class="badge badge-error is-hidden" id="var-a-badge-error">0</span>
-          <span class="badge badge-warn is-hidden" id="var-a-badge-warn">0</span>
-          <span class="badge badge-log" id="var-a-badge-log">0</span>
+      <div class="section-header console-header" role="button" tabindex="0" aria-expanded="true" aria-controls="editor-console">
+        <div class="header-left">
+          <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="m4 6 4 4 4-4"></path>
+          </svg>
+          <span class="header-title">Console</span>
+          <div class="header-badges">
+            <span class="badge badge-error is-hidden" id="var-a-badge-error">0</span>
+            <span class="badge badge-warn is-hidden" id="var-a-badge-warn">0</span>
+            <span class="badge badge-log" id="var-a-badge-log">0</span>
+          </div>
         </div>
         <div class="header-quick-actions">
-          <button class="icon-action-btn" id="var-a-quick-clear" type="button" title="Clear console" aria-label="Clear console">
-            <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-              <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/>
-              <line x1="4" y1="4" x2="12" y2="12" stroke="currentColor" stroke-width="1.5"/>
+          <button class="header-clear-btn" id="var-a-header-clear" type="button" title="Clear console" aria-label="Clear console">
+            <svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor">
+              <path d="M2.5 1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1H3v9.5A1.5 1.5 0 0 0 4.5 15h7a1.5 1.5 0 0 0 1.5-1.5V4h.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1h-3.5a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1H2.5ZM4 4h8v9.5a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5V4Zm2.5 2a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 1 0v-5a.5.5 0 0 0-.5-.5Zm3 0a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 1 0v-5a.5.5 0 0 0-.5-.5Z"/>
             </svg>
+            <span>Clear</span>
           </button>
         </div>
-      </button>
+      </div>
       <div class="editor-container console-container" id="editor-console">
         <div class="console-toolbar">
           <div class="filter-pills" role="tablist">
@@ -88,7 +90,6 @@ export class VariantA {
               <input type="checkbox" id="var-a-autoclear" ${logStore.autoClearOnRun ? 'checked' : ''} />
               <span>Auto-clear</span>
             </label>
-            <button class="text-action-btn" id="var-a-clear-btn" type="button">Clear</button>
           </div>
         </div>
         <div class="console-log-stream" id="var-a-log-stream" role="log" aria-live="polite">
@@ -133,11 +134,22 @@ export class VariantA {
       logStore.autoClearOnRun = e.target.checked;
     });
 
-    // Clear buttons
-    this.sectionEl.querySelector('#var-a-clear-btn')?.addEventListener('click', () => logStore.clear());
-    this.sectionEl.querySelector('#var-a-quick-clear')?.addEventListener('click', (e) => {
+    // Header clear button on other side of Console (0)
+    const headerClearBtn = this.sectionEl.querySelector('#var-a-header-clear');
+    headerClearBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
+      e.preventDefault();
       logStore.clear();
+    });
+
+    // Keydown on header container for keyboard accessibility
+    const header = this.sectionEl.querySelector('.section-header');
+    header?.addEventListener('keydown', (e) => {
+      if (e.target === headerClearBtn) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        window.mylab?.toggleSection?.(this.sectionEl);
+      }
     });
   }
 

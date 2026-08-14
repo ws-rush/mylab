@@ -253,7 +253,14 @@
 .prototype-section-console .console-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .prototype-section-console .header-title {
@@ -265,7 +272,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-left: 4px;
+  margin-left: 2px;
 }
 
 .prototype-section-console .header-quick-actions {
@@ -274,18 +281,30 @@
   align-items: center;
 }
 
-.icon-action-btn {
+.header-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   background: transparent;
-  border: 0;
-  padding: 4px;
-  color: var(--muted);
-  cursor: pointer;
+  border: 1px solid var(--border-soft);
+  color: var(--muted-bright);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 7px;
   border-radius: 4px;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 
-.icon-action-btn:hover {
+.header-clear-btn:hover {
   background: var(--button-hover);
   color: var(--text);
+  border-color: var(--border);
+}
+
+.header-clear-btn:active {
+  background: var(--button-active);
 }
 
 .console-container {
