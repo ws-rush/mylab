@@ -1,5 +1,6 @@
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { buildProjectUrl, readProjectFromHash } from './project-url.js';
+import { getPreviewConsoleInterceptorScript, setupConsoleUi, handleConsoleMessage, logStore } from './console.js';
 import './styles.css';
 
 const LOGO_PATHS = {
@@ -183,8 +184,14 @@ const toast = document.querySelector('#toast');
 let previewInitialized = false;
 const splitter = document.querySelector('#splitter');
 const editorStack = document.querySelector('#editor-stack');
-const editorSections = [...document.querySelectorAll('.editor-section')];
-const editorSplitters = [...document.querySelectorAll('.editor-splitter')];
+
+function getEditorSections() {
+  return [...(editorStack?.querySelectorAll('.editor-section') || [])];
+}
+
+function getEditorSplitters() {
+  return [...(editorStack?.querySelectorAll('.editor-splitter') || [])];
+}
 
 const EDITOR_HEADER_HEIGHT = 30;
 const EDITOR_MIN_OPEN_HEIGHT = 120;
@@ -406,10 +413,12 @@ function buildPreviewDocument() {
       }
     }
 
+    const interceptor = getPreviewConsoleInterceptorScript();
+
     if (/<head/i.test(fullDoc)) {
-      fullDoc = fullDoc.replace(/<head([^>]*)>/i, `<head$1>\n${foucGuard}`);
+      fullDoc = fullDoc.replace(/<head([^>]*)>/i, `<head$1>\n${interceptor}\n${foucGuard}`);
     } else {
-      fullDoc = `${foucGuard}\n${fullDoc}`;
+      fullDoc = `${interceptor}\n${foucGuard}\n${fullDoc}`;
     }
 
     if (css && css.trim()) {
@@ -435,11 +444,14 @@ function buildPreviewDocument() {
     return fullDoc;
   }
 
+  const interceptor = getPreviewConsoleInterceptorScript();
+
   return `<!doctype html>
 <html lang="en" class="${dark ? 'dark' : ''}">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    ${interceptor}
     ${foucGuard}
     <style>
       html,
@@ -465,20 +477,24 @@ function buildPreviewDocument() {
   </head>
   <body>
     ${html}
-    ${js && js.trim() ? `<script>\ntry {\n${js}\n} catch (error) { console.error(error); }\n</script>` : ''}
+    ${js && js.trim() ? `<script id="mylab-user-js">\ntry {\n${js}\n} catch (error) { console.error(error); }\n</script>` : ''}
   </body>
 </html>`;
 }
 
-// Add message listener for preview ready signal
+// Add message listener for preview ready signal and console messages
 window.addEventListener('message', (event) => {
-  if (event.data?.source === 'mylab-preview' && event.data?.type === 'ready') {
-    if (preview) preview.style.opacity = '1';
+  if (event.data?.source === 'mylab-preview') {
+    if (event.data?.type === 'ready') {
+      if (preview) preview.style.opacity = '1';
+    }
+    handleConsoleMessage(event);
   }
 });
 
 function updatePreview() {
   previewInitialized = true;
+  logStore.onCodeReload();
   if (preview) {
     preview.style.transition = 'opacity 0.15s ease-in-out';
     preview.style.opacity = '0';
@@ -609,36 +625,41 @@ function isOpenSection(section) {
 }
 
 function computeOpenSectionHeight(openCount) {
-  const closedSpace = (editorSections.length - openCount) * EDITOR_HEADER_HEIGHT;
-  const splitterSpace = editorSplitters.reduce((total, splitter) => total + splitter.offsetHeight, 0);
+  const sections = getEditorSections();
+  const splitters = getEditorSplitters();
+  const closedSpace = (sections.length - openCount) * EDITOR_HEADER_HEIGHT;
+  const splitterSpace = splitters.reduce((total, splitter) => total + splitter.offsetHeight, 0);
   const openSpace = Math.max(0, editorStack.clientHeight - closedSpace - splitterSpace);
   return openSpace / openCount;
 }
 
 function applyEditorPaneLayout(openSections) {
   const openHeight = computeOpenSectionHeight(openSections.length);
-  for (const section of editorSections) {
+  for (const section of getEditorSections()) {
     setEditorPaneSize(section, isOpenSection(section) ? openHeight : EDITOR_HEADER_HEIGHT);
   }
 }
 
 function layoutEditorPanes() {
   if (!editorStack) return;
-  const openSections = editorSections.filter(isOpenSection);
+  const openSections = getEditorSections().filter(isOpenSection);
   if (openSections.length) applyEditorPaneLayout(openSections);
 }
 
 function requestEditorMeasures() {
   window.requestAnimationFrame(() => {
-    for (const section of editorSections) {
+    for (const section of getEditorSections()) {
       if (!section.classList.contains('is-open')) continue;
-      editorRuntime?.requestEditorMeasure(section.dataset.editor);
+      const key = section.dataset.editor;
+      if (key === 'html' || key === 'css' || key === 'js') {
+        editorRuntime?.requestEditorMeasure(key);
+      }
     }
   });
 }
 
 function syncSectionAccessibility() {
-  for (const section of editorSections) {
+  for (const section of getEditorSections()) {
     section.querySelector('.section-header')?.setAttribute(
       'aria-expanded',
       String(section.classList.contains('is-open')),
@@ -647,21 +668,25 @@ function syncSectionAccessibility() {
 }
 
 function ensureOpenEditors() {
-  for (const section of editorSections) {
+  for (const section of getEditorSections()) {
     if (!section.classList.contains('is-open')) continue;
-    ensureEditor(section.dataset.editor).then((view) => {
-      if (view) view.requestMeasure();
-    });
+    const key = section.dataset.editor;
+    if (key === 'html' || key === 'css' || key === 'js') {
+      ensureEditor(key).then((view) => {
+        if (view) view.requestMeasure();
+      });
+    }
   }
 }
 
 function toggleSection(section) {
+  const sections = getEditorSections();
   const isOpen = section.classList.contains('is-open');
-  const openSections = editorSections.filter((candidate) => candidate.classList.contains('is-open'));
+  const openSections = sections.filter((candidate) => candidate.classList.contains('is-open'));
 
   if (isOpen && openSections.length === 1) {
-    const currentIndex = editorSections.indexOf(section);
-    const nextSection = editorSections[(currentIndex + 1) % editorSections.length];
+    const currentIndex = sections.indexOf(section);
+    const nextSection = sections[(currentIndex + 1) % sections.length];
     section.classList.remove('is-open');
     nextSection.classList.add('is-open');
   } else {
@@ -707,43 +732,49 @@ function updateEditorSplit(splitterElement, clientY) {
   requestEditorMeasures();
 }
 
-function setupEditorSplitters() {
-  let draggingSplitter = null;
+function setupEditorSplitter(splitterElement) {
+  if (!splitterElement || splitterElement.__hasSplitterBound) return;
+  splitterElement.__hasSplitterBound = true;
+  let draggingSplitter = false;
 
-  for (const splitterElement of editorSplitters) {
-    splitterElement.addEventListener('pointerdown', (event) => {
-      if (event.button !== 0) return;
-      event.preventDefault();
-      draggingSplitter = splitterElement;
-      splitterElement.setPointerCapture(event.pointerId);
-      editorStack.classList.add('is-editor-resizing');
-      document.body.style.cursor = 'row-resize';
-    });
+  splitterElement.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    draggingSplitter = true;
+    splitterElement.setPointerCapture(event.pointerId);
+    editorStack.classList.add('is-editor-resizing');
+    document.body.style.cursor = 'row-resize';
+  });
 
-    splitterElement.addEventListener('pointermove', (event) => {
-      if (draggingSplitter === splitterElement) updateEditorSplit(splitterElement, event.clientY);
-    });
+  splitterElement.addEventListener('pointermove', (event) => {
+    if (draggingSplitter) updateEditorSplit(splitterElement, event.clientY);
+  });
 
-    const stopDragging = () => {
-      if (draggingSplitter !== splitterElement) return;
-      draggingSplitter = null;
-      editorStack.classList.remove('is-editor-resizing');
-      document.body.style.cursor = '';
-    };
+  const stopDragging = () => {
+    if (!draggingSplitter) return;
+    draggingSplitter = false;
+    editorStack.classList.remove('is-editor-resizing');
+    document.body.style.cursor = '';
+  };
 
-    splitterElement.addEventListener('pointerup', stopDragging);
-    splitterElement.addEventListener('pointercancel', stopDragging);
-    splitterElement.addEventListener('keydown', (event) => {
-      const direction = event.key === 'ArrowDown' ? 24 : event.key === 'ArrowUp' ? -24 : 0;
-      if (!direction) return;
-      event.preventDefault();
-      const currentPosition = splitterElement.getBoundingClientRect().top;
-      updateEditorSplit(splitterElement, currentPosition + direction);
-    });
-  }
-
-  window.addEventListener('resize', () => window.requestAnimationFrame(layoutEditorPanes));
+  splitterElement.addEventListener('pointerup', stopDragging);
+  splitterElement.addEventListener('pointercancel', stopDragging);
+  splitterElement.addEventListener('keydown', (event) => {
+    const direction = event.key === 'ArrowDown' ? 24 : event.key === 'ArrowUp' ? -24 : 0;
+    if (!direction) return;
+    event.preventDefault();
+    const currentPosition = splitterElement.getBoundingClientRect().top;
+    updateEditorSplit(splitterElement, currentPosition + direction);
+  });
 }
+
+function setupEditorSplitters() {
+  for (const splitterElement of getEditorSplitters()) {
+    setupEditorSplitter(splitterElement);
+  }
+}
+
+window.addEventListener('resize', () => window.requestAnimationFrame(layoutEditorPanes));
 
 function updateSplit(clientX, clientY) {
   const isStacked = window.matchMedia('(max-width: 800px)').matches;
@@ -815,12 +846,22 @@ function setupSplitter() {
 }
 
 function setupSections() {
-  document.querySelectorAll('.editor-section').forEach((section) => {
-    section.querySelector('.section-header').addEventListener('click', () => toggleSection(section));
-  });
-  editorStack.addEventListener('pointerdown', (event) => {
-    if (event.target.closest('.editor-placeholder')) ensureOpenEditors();
-  });
+  for (const section of getEditorSections()) {
+    const header = section.querySelector('.section-header');
+    if (header && !header.__hasSectionBound) {
+      header.__hasSectionBound = true;
+      header.addEventListener('click', (e) => {
+        if (e.target.closest('.header-quick-actions') || (e.target.closest('button') && e.target.closest('button') !== header)) return;
+        toggleSection(section);
+      });
+    }
+  }
+  if (!editorStack.__hasPlaceholderBound) {
+    editorStack.__hasPlaceholderBound = true;
+    editorStack.addEventListener('pointerdown', (event) => {
+      if (event.target.closest('.editor-placeholder')) ensureOpenEditors();
+    });
+  }
 }
 
 function setupActions() {
@@ -857,6 +898,11 @@ window.mylab = Object.freeze({
   getProjectUrl: () => buildProjectUrl(getCode()),
   getThemePreference: () => themePreference,
   getResolvedTheme: () => resolvedTheme,
+  layoutEditorPanes,
+  toggleSection,
+  setupSections,
+  setupEditorSplitters,
+  setupEditorSplitter,
 });
 
 applyTheme();
@@ -871,6 +917,7 @@ preview.addEventListener('load', () => {
     setTimeout(ensureOpenEditors, 200);
   }
 }, { once: true });
+setupConsoleUi();
 updatePreview();
 
 requestAnimationFrame(dismissAppSplash);
