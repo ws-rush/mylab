@@ -1,5 +1,7 @@
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { buildProjectUrl, readProjectFromHash } from './project-url.js';
+import { getPreviewInterceptorScript } from './prototype/console-engine.js';
+import { consolePrototypeApp } from './prototype/index.js';
 import './styles.css';
 
 const LOGO_PATHS = {
@@ -406,10 +408,12 @@ function buildPreviewDocument() {
       }
     }
 
+    const interceptor = getPreviewInterceptorScript();
+
     if (/<head/i.test(fullDoc)) {
-      fullDoc = fullDoc.replace(/<head([^>]*)>/i, `<head$1>\n${foucGuard}`);
+      fullDoc = fullDoc.replace(/<head([^>]*)>/i, `<head$1>\n${interceptor}\n${foucGuard}`);
     } else {
-      fullDoc = `${foucGuard}\n${fullDoc}`;
+      fullDoc = `${interceptor}\n${foucGuard}\n${fullDoc}`;
     }
 
     if (css && css.trim()) {
@@ -435,11 +439,14 @@ function buildPreviewDocument() {
     return fullDoc;
   }
 
+  const interceptor = getPreviewInterceptorScript();
+
   return `<!doctype html>
 <html lang="en" class="${dark ? 'dark' : ''}">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    ${interceptor}
     ${foucGuard}
     <style>
       html,
@@ -465,7 +472,7 @@ function buildPreviewDocument() {
   </head>
   <body>
     ${html}
-    ${js && js.trim() ? `<script>\ntry {\n${js}\n} catch (error) { console.error(error); }\n</script>` : ''}
+    ${js && js.trim() ? `<script id="mylab-user-js">\ntry {\n${js}\n} catch (error) { console.error(error); }\n</script>` : ''}
   </body>
 </html>`;
 }
@@ -479,6 +486,7 @@ window.addEventListener('message', (event) => {
 
 function updatePreview() {
   previewInitialized = true;
+  consolePrototypeApp.notifyCodeReload();
   if (preview) {
     preview.style.transition = 'opacity 0.15s ease-in-out';
     preview.style.opacity = '0';
@@ -872,5 +880,7 @@ preview.addEventListener('load', () => {
   }
 }, { once: true });
 updatePreview();
+
+consolePrototypeApp.init();
 
 requestAnimationFrame(dismissAppSplash);
