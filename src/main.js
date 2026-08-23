@@ -181,7 +181,10 @@ const themeButton = document.querySelector('#theme-button');
 const previewPane = document.querySelector('#preview-pane');
 const preview = document.querySelector('#preview');
 const toast = document.querySelector('#toast');
+let previewReady = false;
 let previewInitialized = false;
+let pendingPreviewUpdate = null;
+let lastDocType = null;
 const splitter = document.querySelector('#splitter');
 const editorStack = document.querySelector('#editor-stack');
 
@@ -297,7 +300,16 @@ function ensureEditor(key) {
         onChange: (value) => {
           codeValues[key] = value;
           scheduleHashUpdate();
-          updatePreview();
+          if (key === 'css' && previewReady) {
+            try {
+              preview?.contentWindow?.postMessage(
+                { source: 'mylab-preview', type: 'set-css', css: value },
+                '*',
+              );
+              return;
+            } catch {}
+          }
+          schedulePreviewUpdate();
         },
       }))
       .catch((error) => {
@@ -330,120 +342,13 @@ function applyTheme() {
   if (previewInitialized) updatePreview();
 }
 
-function buildPreviewDocument() {
+function buildSnippetPreviewDocument() {
   const code = getCode();
   const previewMode = resolvedTheme === 'dark' ? 'dark' : 'light';
   const html = code.html.replaceAll('src="/logo.svg"', `src="${LOGO_PATHS[previewMode]}"`);
   const css = code.css;
   const js = code.js;
   const dark = previewMode === 'dark';
-
-  const foucGuard = `<style id="mylab-hide-fouc">
-    html { opacity: 0 !important; visibility: hidden !important; }
-    html.mylab-ready { opacity: 1 !important; visibility: visible !important; transition: opacity 0.15s ease-in-out !important; }
-  </style>
-  <script id="mylab-fouc-script">
-    (function() {
-      let revealed = false;
-      let checkCount = 0;
-      const initialStyleCount = document.head.querySelectorAll('style').length;
-
-      const reveal = function() {
-        if (revealed) return;
-        revealed = true;
-        document.documentElement.classList.add('mylab-ready');
-        try {
-          window.parent.postMessage({ source: 'mylab-preview', type: 'ready' }, '*');
-        } catch (e) {}
-      };
-
-      const checkReady = function() {
-        checkCount++;
-        const hasTailwindScript = !!document.querySelector('script[src*="tailwindcss"]');
-        const currentStyleCount = document.head.querySelectorAll('style').length;
-        const tailwindStyleAdded = currentStyleCount > initialStyleCount || !!document.querySelector('style[id*="tailwind"]');
-
-        if (hasTailwindScript && !tailwindStyleAdded && checkCount < 40) {
-          setTimeout(checkReady, 25);
-          return;
-        }
-
-        const hasVueScript = !!document.querySelector('script[src*="pocket-vue"]') || !!document.querySelector('script[src*="vue"]') || !!document.querySelector('script[src*="alpine"]');
-        const vScopeContainers = document.querySelectorAll('[v-scope]');
-        let vueMounted = true;
-        if (hasVueScript && vScopeContainers.length > 0) {
-          vueMounted = Array.from(vScopeContainers).some(function(el) {
-            return el.children.length > 0 || el.textContent.trim().length > 0;
-          });
-        }
-
-        if (hasVueScript && !vueMounted && checkCount < 40) {
-          setTimeout(checkReady, 25);
-          return;
-        }
-
-        requestAnimationFrame(function() {
-          requestAnimationFrame(function() {
-            setTimeout(reveal, 80);
-          });
-        });
-      };
-
-      if (document.readyState === 'complete') {
-        checkReady();
-      } else {
-        window.addEventListener('load', checkReady, { once: true });
-        setTimeout(checkReady, 1500);
-      }
-    })();
-  </script>`;
-
-  const isFullDoc = /^\s*<!doctype\s+/i.test(html) || /^\s*<html[\s>]/i.test(html);
-
-  if (isFullDoc) {
-    let fullDoc = html;
-
-    if (dark) {
-      if (/<html[^>]*class=["'][^"']*dark[^"']*["']/i.test(fullDoc)) {
-        // already has dark class
-      } else if (/<html[^>]*class=["']/i.test(fullDoc)) {
-        fullDoc = fullDoc.replace(/<html([^>]*)class=["']([^"']*)["']/i, '<html$1class="$2 dark"');
-      } else {
-        fullDoc = fullDoc.replace(/<html/i, '<html class="dark"');
-      }
-    }
-
-    const interceptor = getPreviewConsoleInterceptorScript();
-
-    if (/<head/i.test(fullDoc)) {
-      fullDoc = fullDoc.replace(/<head([^>]*)>/i, `<head$1>\n${interceptor}\n${foucGuard}`);
-    } else {
-      fullDoc = `${interceptor}\n${foucGuard}\n${fullDoc}`;
-    }
-
-    if (css && css.trim()) {
-      const styleTag = `<style id="mylab-user-css">\n${css}\n</style>`;
-      if (/<\/head>/i.test(fullDoc)) {
-        fullDoc = fullDoc.replace(/<\/head>/i, `${styleTag}\n</head>`);
-      } else if (/<body/i.test(fullDoc)) {
-        fullDoc = fullDoc.replace(/<body/i, `${styleTag}\n<body`);
-      } else {
-        fullDoc = `${styleTag}\n${fullDoc}`;
-      }
-    }
-
-    if (js && js.trim()) {
-      const scriptTag = `<script id="mylab-user-js">\ntry {\n${js}\n} catch(err) { console.error(err); }\n</script>`;
-      if (/<\/body>/i.test(fullDoc)) {
-        fullDoc = fullDoc.replace(/<\/body>/i, `${scriptTag}\n</body>`);
-      } else {
-        fullDoc = `${fullDoc}\n${scriptTag}`;
-      }
-    }
-
-    return fullDoc;
-  }
-
   const interceptor = getPreviewConsoleInterceptorScript();
 
   return `<!doctype html>
@@ -452,7 +357,6 @@ function buildPreviewDocument() {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     ${interceptor}
-    ${foucGuard}
     <style>
       html,
       body {
@@ -473,34 +377,314 @@ function buildPreviewDocument() {
         background: #050505;
       }
     </style>
-    ${css && css.trim() ? `<style id="preview-style">\n${css}\n</style>` : '<style id="preview-style"></style>'}
+    <style id="preview-style">${css || ''}</style>
   </head>
   <body>
-    ${html}
+    ${html || ''}
     ${js && js.trim() ? `<script id="mylab-user-js">\ntry {\n${js}\n} catch (error) { console.error(error); }\n</script>` : ''}
   </body>
+  <script>
+    const activateMarkupScripts = (container = document.body) => {
+      for (const script of [...container.querySelectorAll('script:not(#mylab-user-js)')]) {
+        if (script.src) {
+          const replacement = document.createElement('script');
+          for (const attribute of script.attributes) {
+            replacement.setAttribute(attribute.name, attribute.value);
+          }
+          script.replaceWith(replacement);
+        } else {
+          try {
+            new Function(script.textContent)();
+          } catch (err) {
+            console.error(err);
+          }
+          script.remove();
+        }
+      }
+    };
+
+    const updatePreview = ({ html, css, js, dark }) => {
+      document.documentElement.classList.toggle('dark', dark);
+      const style = document.querySelector('#preview-style');
+      if (style) style.textContent = css;
+      document.body.innerHTML = html;
+      activateMarkupScripts();
+      try {
+        new Function(js)();
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    window.addEventListener('message', (event) => {
+      if (event.source !== window.parent) return;
+      if (!event.data || event.data.source !== 'mylab-preview') return;
+      if (event.data.type === 'update') {
+        updatePreview(event.data);
+      } else if (event.data.type === 'set-css') {
+        const style = document.querySelector('#preview-style');
+        if (style) style.textContent = event.data.css;
+      }
+    });
+  </script>
 </html>`;
 }
 
-// Add message listener for preview ready signal and console messages
-window.addEventListener('message', (event) => {
-  if (event.data?.source === 'mylab-preview') {
-    if (event.data?.type === 'ready') {
-      if (preview) preview.style.opacity = '1';
+function getFullDocLiveUpdaterScript() {
+  return `<script id="mylab-fulldoc-updater">
+(function() {
+  function activateScripts(container) {
+    for (const script of [...container.querySelectorAll('script:not(#mylab-fulldoc-updater):not(#mylab-console-interceptor)')]) {
+      if (script.src) {
+        const replacement = document.createElement('script');
+        for (const attribute of script.attributes) {
+          replacement.setAttribute(attribute.name, attribute.value);
+        }
+        script.replaceWith(replacement);
+      } else {
+        try {
+          new Function(script.textContent)();
+        } catch (err) {
+          console.error(err);
+        }
+        script.remove();
+      }
     }
-    handleConsoleMessage(event);
   }
-});
 
-function updatePreview() {
-  previewInitialized = true;
-  logStore.onCodeReload();
-  if (preview) {
-    preview.style.transition = 'opacity 0.15s ease-in-out';
-    preview.style.opacity = '0';
-    preview.srcdoc = buildPreviewDocument();
+  window.addEventListener('message', function(event) {
+    if (event.source !== window.parent) return;
+    if (!event.data || event.data.source !== 'mylab-preview') return;
+
+    if (event.data.type === 'set-css') {
+      let style = document.getElementById('mylab-user-css');
+      if (!style) {
+        style = document.createElement('style');
+        style.id = 'mylab-user-css';
+        (document.head || document.documentElement).appendChild(style);
+      }
+      style.textContent = event.data.css || '';
+      return;
+    }
+
+    if (event.data.type === 'update-fulldoc') {
+      const { bodyHtml, bodyAttrs, htmlAttrs, css, js, dark } = event.data;
+      document.documentElement.classList.toggle('dark', dark);
+      if (htmlAttrs) {
+        for (const [k, v] of Object.entries(htmlAttrs)) {
+          document.documentElement.setAttribute(k, v);
+        }
+      }
+      let style = document.getElementById('mylab-user-css');
+      if (style) style.textContent = css || '';
+
+      if (bodyAttrs && document.body) {
+        for (const [k, v] of Object.entries(bodyAttrs)) {
+          document.body.setAttribute(k, v);
+        }
+      }
+
+      if (document.body && bodyHtml !== undefined) {
+        document.body.innerHTML = bodyHtml;
+        activateScripts(document.body);
+      }
+
+      if (js && js.trim()) {
+        try {
+          new Function(js)();
+        } catch (err) {
+          console.error(err);
+        }
+      }
+    }
+  });
+})();
+</script>`;
+}
+
+function extractFullDocParts(html) {
+  const headMatch = html.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
+  const headContent = headMatch ? headMatch[1] : '';
+  const headScripts = (headContent.match(/<(?:script|link)[^>]*>/gi) || []).join('\n');
+
+  const bodyMatch = html.match(/<body([^>]*)>([\s\S]*?)<\/body>/i);
+  const bodyAttrsStr = bodyMatch ? bodyMatch[1] : '';
+  const bodyHtml = bodyMatch ? bodyMatch[2] : html;
+
+  const htmlMatch = html.match(/<html([^>]*)>/i);
+  const htmlAttrsStr = htmlMatch ? htmlMatch[1] : '';
+
+  return { headScripts, bodyHtml, bodyAttrsStr, htmlAttrsStr };
+}
+
+function parseAttributes(attrStr) {
+  const attrs = {};
+  if (!attrStr) return attrs;
+  const regex = /([a-zA-Z0-9_-]+)(?:=["']([^"']*)["'])?/g;
+  let match;
+  while ((match = regex.exec(attrStr)) !== null) {
+    attrs[match[1]] = match[2] !== undefined ? match[2] : '';
+  }
+  return attrs;
+}
+
+let lastHeadSignature = '';
+
+function buildFullPreviewDocument() {
+  const code = getCode();
+  const previewMode = resolvedTheme === 'dark' ? 'dark' : 'light';
+  const html = code.html.replaceAll('src="/logo.svg"', `src="${LOGO_PATHS[previewMode]}"`);
+  const css = code.css;
+  const js = code.js;
+  const dark = previewMode === 'dark';
+
+  let fullDoc = html;
+
+  if (dark) {
+    if (/<html[^>]*class=["'][^"']*dark[^"']*["']/i.test(fullDoc)) {
+      // already has dark class
+    } else if (/<html[^>]*class=["']/i.test(fullDoc)) {
+      fullDoc = fullDoc.replace(/<html([^>]*)class=["']([^"']*)["']/i, '<html$1class="$2 dark"');
+    } else {
+      fullDoc = fullDoc.replace(/<html/i, '<html class="dark"');
+    }
+  }
+
+  const interceptor = getPreviewConsoleInterceptorScript();
+  const updater = getFullDocLiveUpdaterScript();
+
+  if (/<head/i.test(fullDoc)) {
+    fullDoc = fullDoc.replace(/<head([^>]*)>/i, `<head$1>\n${interceptor}\n${updater}`);
+  } else {
+    fullDoc = `${interceptor}\n${updater}\n${fullDoc}`;
+  }
+
+  if (css && css.trim()) {
+    const styleTag = `<style id="mylab-user-css">\n${css}\n</style>`;
+    if (/<\/head>/i.test(fullDoc)) {
+      fullDoc = fullDoc.replace(/<\/head>/i, `${styleTag}\n</head>`);
+    } else if (/<body/i.test(fullDoc)) {
+      fullDoc = fullDoc.replace(/<body/i, `${styleTag}\n<body`);
+    } else {
+      fullDoc = `${styleTag}\n${fullDoc}`;
+    }
+  } else {
+    const styleTag = `<style id="mylab-user-css"></style>`;
+    if (/<\/head>/i.test(fullDoc)) {
+      fullDoc = fullDoc.replace(/<\/head>/i, `${styleTag}\n</head>`);
+    } else {
+      fullDoc = `${styleTag}\n${fullDoc}`;
+    }
+  }
+
+  if (js && js.trim()) {
+    const scriptTag = `<script id="mylab-user-js">\ntry {\n${js}\n} catch(err) { console.error(err); }\n</script>`;
+    if (/<\/body>/i.test(fullDoc)) {
+      fullDoc = fullDoc.replace(/<\/body>/i, `${scriptTag}\n</body>`);
+    } else {
+      fullDoc = `${fullDoc}\n${scriptTag}`;
+    }
+  }
+
+  return fullDoc;
+}
+
+function buildPreviewDocument() {
+  const code = getCode();
+  const isFullDoc = /^\s*<!doctype\s+/i.test(code.html) || /^\s*<html[\s>]/i.test(code.html);
+  return isFullDoc ? buildFullPreviewDocument() : buildSnippetPreviewDocument();
+}
+
+function getPreviewUpdate() {
+  const code = getCode();
+  const previewMode = resolvedTheme === 'dark' ? 'dark' : 'light';
+  return {
+    ...code,
+    html: code.html.replaceAll('src="/logo.svg"', `src="${LOGO_PATHS[previewMode]}"`),
+    dark: previewMode === 'dark',
+  };
+}
+
+function postPreviewUpdate(update) {
+  if (!previewReady) {
+    pendingPreviewUpdate = update;
+    return;
+  }
+
+  try {
+    preview?.contentWindow?.postMessage(
+      { source: 'mylab-preview', type: 'update', ...update },
+      '*',
+    );
+  } catch (e) {
+    console.error('Error posting preview update:', e);
   }
 }
+
+let previewUpdateTimer;
+
+function schedulePreviewUpdate(delay = 120) {
+  window.clearTimeout(previewUpdateTimer);
+  previewUpdateTimer = window.setTimeout(updatePreview, delay);
+}
+
+function updatePreview() {
+  window.clearTimeout(previewUpdateTimer);
+  const code = getCode();
+  const isFullDoc = /^\s*<!doctype\s+/i.test(code.html) || /^\s*<html[\s>]/i.test(code.html);
+  const docType = isFullDoc ? 'fulldoc' : 'snippet';
+  logStore.onCodeReload();
+
+  if (!previewInitialized || lastDocType !== docType) {
+    previewInitialized = true;
+    lastDocType = docType;
+    previewReady = false;
+    if (isFullDoc) {
+      const { headScripts } = extractFullDocParts(code.html);
+      lastHeadSignature = headScripts;
+      if (preview) preview.srcdoc = buildFullPreviewDocument();
+    } else {
+      if (preview) {
+        preview.srcdoc = buildSnippetPreviewDocument();
+        postPreviewUpdate(getPreviewUpdate());
+      }
+    }
+    return;
+  }
+
+  if (isFullDoc) {
+    const { headScripts, bodyHtml, bodyAttrsStr, htmlAttrsStr } = extractFullDocParts(code.html);
+    if (previewReady && headScripts === lastHeadSignature) {
+      try {
+        const bodyAttrs = parseAttributes(bodyAttrsStr);
+        const htmlAttrs = parseAttributes(htmlAttrsStr);
+        const previewMode = resolvedTheme === 'dark' ? 'dark' : 'light';
+        preview?.contentWindow?.postMessage({
+          source: 'mylab-preview',
+          type: 'update-fulldoc',
+          bodyHtml,
+          bodyAttrs,
+          htmlAttrs,
+          css: code.css,
+          js: code.js,
+          dark: previewMode === 'dark',
+        }, '*');
+        return;
+      } catch (err) {
+        console.error('In-place full document update error:', err);
+      }
+    }
+    lastHeadSignature = headScripts;
+    if (preview) preview.srcdoc = buildFullPreviewDocument();
+  } else {
+    postPreviewUpdate(getPreviewUpdate());
+  }
+}
+
+// Add message listener for console messages
+window.addEventListener('message', (event) => {
+  handleConsoleMessage(event);
+});
 
 
 function showToast(message) {
@@ -903,6 +1087,13 @@ window.mylab = Object.freeze({
   setupSections,
   setupEditorSplitters,
   setupEditorSplitter,
+  updatePreview,
+  schedulePreviewUpdate,
+  postPreviewUpdate,
+  getPreviewUpdate,
+  buildPreviewDocument,
+  buildSnippetPreviewDocument,
+  buildFullPreviewDocument,
 });
 
 applyTheme();
@@ -910,13 +1101,19 @@ setupSections();
 setupActions();
 setupSplitter();
 setupEditorSplitters();
-preview.addEventListener('load', () => {
+preview?.addEventListener('load', () => {
+  previewReady = true;
+  if (pendingPreviewUpdate) {
+    const update = pendingPreviewUpdate;
+    pendingPreviewUpdate = null;
+    postPreviewUpdate(update);
+  }
   if ('requestIdleCallback' in window) {
     requestIdleCallback(ensureOpenEditors, { timeout: 2000 });
   } else {
     setTimeout(ensureOpenEditors, 200);
   }
-}, { once: true });
+});
 setupConsoleUi();
 updatePreview();
 
